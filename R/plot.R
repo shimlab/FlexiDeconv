@@ -81,9 +81,7 @@ visualizeReference <- function(ref, want_log=F, cluster_col=T, cluster_row=F,
 #' 'Ependymal'='black', 'Excitatory'='blue',
 #' 'Inhibitory'='green', 'Microglia'='purple',
 #' 'OD Immature'='yellow', 'OD Mature'='brown', 'Pericytes'='cyan')
-#' legend_labels <- names(color)
-#' legend_colors <- as.vector(color)
-#' legend_grob <- getLegendGrob(legend_labels, legend_colors)
+#' legend_grob <- getLegendGrob(color)
 #' plotDeconvRes(mouse_hypothalamus$ground_truth_deconv,
 #' mouse_hypothalamus$spatial_meta,
 #' color = color,
@@ -383,8 +381,7 @@ get_legend <- function(p) {
 #' @description Create a pseudo ggplot2 plot using the provided label and
 #' color, then retrieving only the legend object and return
 #'
-#' @param legend_labels Labels for the cell types
-#' @param legend_colors Colors for the cell types
+#' @param color named vector representing color for each cell type
 #'
 #' @return A legend object if it exists
 #'
@@ -396,9 +393,7 @@ get_legend <- function(p) {
 #'           'Inhibitory'='green', 'Microglia'='purple',
 #'           'OD Immature'='yellow', 'OD Mature'='brown',
 #'           'Pericytes'='cyan')
-#' legend_labels <- names(color)
-#' legend_colors <- as.vector(color)
-#' legend_grob <- getLegendGrob(legend_labels, legend_colors)
+#' legend_grob <- getLegendGrob(color)
 #' plotDeconvRes(mouse_hypothalamus$ground_truth_deconv,
 #'               mouse_hypothalamus$spatial_meta,
 #'               color = color,
@@ -408,7 +403,10 @@ get_legend <- function(p) {
 #'
 #' @export
 
-getLegendGrob <- function(legend_labels, legend_colors) {
+getLegendGrob <- function(color) {
+  ordered_col = color[order(names(color))]
+  legend_labels <- names(ordered_col)
+  legend_colors <- as.vector(ordered_col)
   legend_plot <- ggplot2::ggplot(data.frame(x = 1, y = 1, type = legend_labels),
                                  ggplot2::aes(x = x, y = y, fill = type)) +
     ggplot2::geom_tile() +

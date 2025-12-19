@@ -18,6 +18,8 @@ library(FlexiDeconv)
 
 
 ```{r}
+set.seed(42)
+
 data(mouse_hypothalamus)
 new_reference <- appendPlaceholder(mouse_hypothalamus$reference, numPlaceholder=1)
 p <- visualizeReference(new_reference)
@@ -31,9 +33,7 @@ color = c('Astrocyte'='red', 'Endothelial'='orange',
              'OD Immature'='yellow', 'OD Mature'='brown',
              'Pericytes'='cyan')
 
-legend_labels <- names(color)
-legend_colors <- as.vector(color) 
-legend_grob <- getLegendGrob(legend_labels, legend_colors)
+legend_grob <- getLegendGrob(color)
 ```
 
 
@@ -65,36 +65,34 @@ plotDeconvRes(mouse_hypothalamus$ground_truth_deconv,
 
 ```{r} 
 prior_const = c(rep(5, 8), 0.1)
-output = runFlexiDeconv(as.matrix(mouse_hypothalamus$spatial),
-                         new_reference, 
-                         prior_const)
+#output = runFlexiDeconv(as.matrix(mouse_hypothalamus$spatial),
+#                         new_reference, 
+#                         prior_const)
 
 ```
 
 
 
 ```{r}
-color = c('Astrocyte'='red', 'Endothelial'='orange', 
-             'Ependymal'='black', 'Excitatory'='blue', 
-             'Inhibitory'='green', 'Microglia'='purple', 
-             'OD Immature'='yellow', 'Placeholder 1'='brown',
-             'Pericytes'='cyan')
-
-legend_labels <- names(color)
-legend_colors <- as.vector(color) 
-legend_grob2 <- getLegendGrob(legend_labels, legend_colors)
+#color = c('Astrocyte'='red', 'Endothelial'='orange', 
+#             'Ependymal'='black', 'Excitatory'='blue', 
+#             'Inhibitory'='green', 'Microglia'='purple', 
+#             'OD Immature'='yellow', 'Placeholder 1'='brown',
+#             'Pericytes'='cyan')
+#
+#legend_grob2 <- getLegendGrob(color)
 ```
 
 
 
 ```{r}
 
-plotDeconvRes(output$gamma/rowSums(output$gamma),
-              mouse_hypothalamus$spatial_meta,
-              color = color,
-              numRow = 1,
-              numCol = 2,
-              legend_grob = legend_grob2)
+#plotDeconvRes(output$gamma/rowSums(output$gamma),
+#              mouse_hypothalamus$spatial_meta,
+#              color = color,
+#              numRow = 1,
+#              numCol = 2,
+#              legend_grob = legend_grob2)
 
 
 ```
