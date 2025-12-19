@@ -1,0 +1,119 @@
+---
+title: "FlexiDeconv vignette"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{FlexiDeconv vignette}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+## R Markdown
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(FlexiDeconv)
+```
+
+
+
+
+```{r}
+data(mouse_hypothalamus)
+new_reference <- appendPlaceholder(mouse_hypothalamus$reference, numPlaceholder=1)
+p <- visualizeReference(new_reference)
+p
+```
+
+```{r}
+color = c('Astrocyte'='red', 'Endothelial'='orange', 
+             'Ependymal'='black', 'Excitatory'='blue', 
+             'Inhibitory'='green', 'Microglia'='purple', 
+             'OD Immature'='yellow', 'OD Mature'='brown',
+             'Pericytes'='cyan')
+
+legend_labels <- names(color)
+legend_colors <- as.vector(color) 
+legend_grob <- getLegendGrob(legend_labels, legend_colors)
+```
+
+
+
+```{r}
+plotDeconvRes(mouse_hypothalamus$ground_truth_deconv,
+              mouse_hypothalamus$spatial_meta,
+              color = color,
+              numRow = 1,
+              numCol = 2,
+              legend_grob = legend_grob)
+
+```
+
+
+
+```{r}
+cellType = 'OD Mature'
+cellType_idx = which(colnames(mouse_hypothalamus$ground_truth_deconv) == cellType)
+plotDeconvRes(mouse_hypothalamus$ground_truth_deconv,
+              mouse_hypothalamus$spatial_meta,
+              color = color,
+              numRow = 1,
+              numCol = 2,
+              topic = cellType_idx,
+              r=4)
+
+```
+
+```{r} 
+prior_const = c(rep(5, 8), 0.1)
+output = runFlexiDeconv(as.matrix(mouse_hypothalamus$spatial),
+                         new_reference, 
+                         prior_const)
+
+```
+
+
+
+```{r}
+color = c('Astrocyte'='red', 'Endothelial'='orange', 
+             'Ependymal'='black', 'Excitatory'='blue', 
+             'Inhibitory'='green', 'Microglia'='purple', 
+             'OD Immature'='yellow', 'Placeholder 1'='brown',
+             'Pericytes'='cyan')
+
+legend_labels <- names(color)
+legend_colors <- as.vector(color) 
+legend_grob2 <- getLegendGrob(legend_labels, legend_colors)
+```
+
+
+
+```{r}
+
+plotDeconvRes(output$gamma/rowSums(output$gamma),
+              mouse_hypothalamus$spatial_meta,
+              color = color,
+              numRow = 1,
+              numCol = 2,
+              legend_grob = legend_grob2)
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

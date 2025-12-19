@@ -1,11 +1,34 @@
 Package: FlexiDeconv
-Type: Package
-Title: What the Package Does (Title Case)
+Title: Flexible Cell Type Deconvolution Method for Spatial Transcriptomics
 Version: 0.1.0
-Author: Who wrote it
-Maintainer: The package maintainer <yourself@somewhere.net>
-Description: More about what it does (maybe more than one line)
-    Use four spaces when indenting paragraphs within the Description.
-License: What license is it under?
+Authors@R: c(
+  person("Yichen", "Jiang", email = "yichenjiang0626@gmail.com", role = c("aut","cre")),
+  person("Heejung", "Shim", email = "heejung.shim@unimelb.edu.au", role = "aut")
+ )
+Description: FlexiDeconv is a semi supervised cell type deconvolution
+    method that infers cell type proportions across pixels by flexibly
+    leveraging the reference, which consists of cell type gene expression
+    profiles typically derived from scRNA-seq data. Even though the
+    reference is used, FlexiDeconv still actively estimates cell type gene
+    expression profiles from the Spatial Transcriptomics data. FlexiDeconv
+    allows users to assign weights to the provided cell type gene
+    expression profiles, reflecting the extent to which reference
+    contributes to estimating gene expression relative to the ST data.
+URL: https://github.com/shimlab/FlexiDeconv/
+License: GPL (>= 3) + file LICENSE
 Encoding: UTF-8
-LazyData: true
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.2.3
+Imports: 
+    bayess,
+    ggplot2,
+    gridExtra,
+    Matrix,
+    pheatmap,
+    STdeconvolve,
+    scatterpie
+Depends: R (>= 4.3.0)
+Suggests:
+    knitr,
+    rmarkdown
+VignetteBuilder: knitr
