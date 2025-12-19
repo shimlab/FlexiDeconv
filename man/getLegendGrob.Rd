@@ -4,12 +4,10 @@
 \alias{getLegendGrob}
 \title{Create legend object for plotting deconvolution result}
 \usage{
-getLegendGrob(legend_labels, legend_colors)
+getLegendGrob(color)
 }
 \arguments{
-\item{legend_labels}{Labels for the cell types}
-
-\item{legend_colors}{Colors for the cell types}
+\item{color}{named vector representing color for each cell type}
 }
 \value{
 A legend object if it exists
@@ -26,9 +24,7 @@ color = c('Astrocyte'='red', 'Endothelial'='orange',
           'Inhibitory'='green', 'Microglia'='purple',
           'OD Immature'='yellow', 'OD Mature'='brown',
           'Pericytes'='cyan')
-legend_labels <- names(color)
-legend_colors <- as.vector(color)
-legend_grob <- getLegendGrob(legend_labels, legend_colors)
+legend_grob <- getLegendGrob(color)
 plotDeconvRes(mouse_hypothalamus$ground_truth_deconv,
               mouse_hypothalamus$spatial_meta,
               color = color,

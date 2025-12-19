@@ -54,9 +54,7 @@ color = c('Astrocyte'='red', 'Endothelial'='orange',
 'Ependymal'='black', 'Excitatory'='blue',
 'Inhibitory'='green', 'Microglia'='purple',
 'OD Immature'='yellow', 'OD Mature'='brown', 'Pericytes'='cyan')
-legend_labels <- names(color)
-legend_colors <- as.vector(color)
-legend_grob <- getLegendGrob(legend_labels, legend_colors)
+legend_grob <- getLegendGrob(color)
 plotDeconvRes(mouse_hypothalamus$ground_truth_deconv,
 mouse_hypothalamus$spatial_meta,
 color = color,
