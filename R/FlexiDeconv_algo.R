@@ -23,6 +23,8 @@
 #' @return ELBO value for current parameter set
 #'
 #' @noRd
+#'
+#' @keywords internal
 
 ELBO <- function(ref.p, gamma.p, tau.p, alpha.p, phi.p, ct.count,
                  pixel.count, gene.count, count.data) {
@@ -79,6 +81,8 @@ t1 <- function(ref.p, ct.count, tau.p) {
 #' @return Calculated second term E[log p(theta|alpha)]
 #'
 #' @noRd
+#'
+#' @keywords internal
 
 t2 <- function(alpha.p, gamma.p, pixel.count) {
   # E[log p(theta|alpha)]
@@ -108,6 +112,8 @@ t2 <- function(alpha.p, gamma.p, pixel.count) {
 #' @return Calculated third term E[log p(z|theta)]
 #'
 #' @noRd
+#'
+#' @keywords internal
 
 
 t3 <- function(phi.p, gamma.p, pixel.count, ct.count, count.data, gene.count) {
@@ -140,6 +146,8 @@ t3 <- function(phi.p, gamma.p, pixel.count, ct.count, count.data, gene.count) {
 #' @return Calculated fourth term E[log p(w|z,beta)]
 #'
 #' @noRd
+#'
+#' @keywords internal
 
 
 t4 <- function(gene.count, pixel.count, ct.count, phi.p, tau.p, count.data) {
@@ -169,6 +177,8 @@ t4 <- function(gene.count, pixel.count, ct.count, phi.p, tau.p, count.data) {
 #' @return Calculated fifth term E[log q(theta)]
 #'
 #' @noRd
+#'
+#' @keywords internal
 
 t5 <- function(pixel.count, gamma.p) {
   # E[log q(theta)]
@@ -198,6 +208,8 @@ t5 <- function(pixel.count, gamma.p) {
 #' @return Calculated sixth term E[log q(z)]
 #'
 #' @noRd
+#'
+#' @keywords internal
 
 
 t6 <- function(pixel.count, ct.count, gene.count, phi.p, count.data) {
@@ -225,6 +237,8 @@ t6 <- function(pixel.count, ct.count, gene.count, phi.p, count.data) {
 #' @return Calculated seventh term E[log q(beta)]
 #'
 #' @noRd
+#'
+#' @keywords internal
 
 t7 <- function(ct.count, tau.p) {
   # E[log q(beta)]
@@ -260,6 +274,8 @@ t7 <- function(ct.count, tau.p) {
 #' @return Updated phi parameter, dimension = pixel x gene x cell type
 #'
 #' @noRd
+#'
+#' @keywords internal
 
 
 phi.update <- function(pixel.count, ct.count, gene.count, gamma.p, tau.p) {
@@ -308,6 +324,8 @@ phi.update <- function(pixel.count, ct.count, gene.count, gamma.p, tau.p) {
 #' @return Updated gamma parameter, dimension = pixel x cell type
 #'
 #' @noRd
+#'
+#' @keywords internal
 
 gamma.update <- function(pixel.count, gene.count, ct.count, alpha.p, phi.p,
                          count.data) {
@@ -337,6 +355,8 @@ gamma.update <- function(pixel.count, gene.count, ct.count, alpha.p, phi.p,
 #' @return Updated tau parameter, dimension = cell type x gene
 #'
 #' @noRd
+#'
+#' @keywords internal
 
 tau.update <- function(ct.count, gene.count, pixel.count, ref.p, phi.p, count.data) {
   new.tau <- ref.p
@@ -361,6 +381,8 @@ tau.update <- function(ct.count, gene.count, pixel.count, ref.p, phi.p, count.da
 #' @return Updated alpha parameter, length = total cell type count
 #'
 #' @noRd
+#'
+#' @keywords internal
 
 alpha.update <- function(pixel.count, ct.count, alpha.p, gamma.p) {
   threshold <- 0.0001
@@ -393,6 +415,8 @@ alpha.update <- function(pixel.count, ct.count, alpha.p, gamma.p) {
 #' @return Updated alpha parameter in an iteration, length = total cell type count
 #'
 #' @noRd
+#'
+#' @keywords internal
 
 alpha.step <- function(pixel.count, ct.count, alpha.p, gamma.p) {
   g.vec <- pixel.count * (digamma(sum(alpha.p)) - digamma(alpha.p))
@@ -421,17 +445,39 @@ alpha.step <- function(pixel.count, ct.count, alpha.p, gamma.p) {
 
 
 
+#' Run FlexiDeconv algorithm for cell type deconvolution
+#'
+#' @description Given the Spatial Transcriptomics data (pixel x gene) and
+#' reference (cell type x gene), as well as prior constant for the reference, run
+#' FlexiDeconv algorithm to obtain:
+#' 1. Cell type proportion per pixel
+#' 2. Estimated gene expression profile for each cell type
+#'
+#' @param spatial pixel x gene matrix representing Spatial Transcriptomics data
+#' @param reference cell type x gene matrix representing reference, row sum should be 1
+#' @param prior_const vector of length = total number of provided cell type in the reference,
+#'      representing weight assigned to each cell type.
+#' @param verbose (default: TRUE)
+#' @param iter_print_freq (default: 50)
+#'
+#' @return A list containing estimated cell type proportion per pixel and estimated
+#' gene expression profile for each cell type
+#'
+#' @examples
+#'
+#' data(mouse_hypothalamus)
+#' new_reference <- appendPlaceholder(mouse_hypothalamus$reference, numPlaceholder=1)
+#' prior_const = c(rep(5, 8), 0.1)
+#' output = runFlexiDeconv(as.matrix(mouse_hypothalamus$spatial),
+#' new_reference,
+#' prior_const)
+#'
+#' @export
 
 
 
 
-
-
-
-
-
-
-run_FlexiDeconv <- function(spatial, reference, prior_const,
+runFlexiDeconv <- function(spatial, reference, prior_const,
                             verbose = T, iter_print_freq = 50) {
 
   ## retrieve important statistics about the data
@@ -440,20 +486,20 @@ run_FlexiDeconv <- function(spatial, reference, prior_const,
   cell_types = rownames(reference)
   medium_molecule_count = median(rowSums(spatial))
 
-  prior_const_matrix = matrix(prior_constant_data, nrow = dim(reference)[1],
+  prior_const_matrix = matrix(prior_const, nrow = dim(reference)[1],
                               ncol = dim(reference)[2], byrow = FALSE)
   prior_const_scaled = prior_const_matrix * medium_molecule_count * pixel_num/length(cell_types)
 
 
 
-  alpha.vi <- rdirichlet(n = 1, par = rep(5, length(cell_types)))[1,] * 50
+  alpha.vi <- bayess::rdirichlet(n = 1, par = rep(5, length(cell_types)))[1,] * 50
   if (verbose) {
     message("Length of vector alpha: ", length(alpha.vi))
   }
 
 
   # gamma is pixel x cell type
-  gamma <- length(cell_types) * rdirichlet(n = pixel_num, par = rep(30, length(cell_types)))
+  gamma <- length(cell_types) * bayess::rdirichlet(n = pixel_num, par = rep(30, length(cell_types)))
   if (verbose) {
     message("Parameter gamma: ", nrow(gamma), " pixels x ", ncol(gamma), " cell types")
   }
@@ -461,7 +507,7 @@ run_FlexiDeconv <- function(spatial, reference, prior_const,
   # phi is pixel x gene x cell type
   phi <- array(0, dim = c(pixel_num, gene_num, length(cell_types)))
   for (i in 1:pixel_num) {
-    phi[i,,] = rdirichlet(n = gene_num, par = rep(30, length(cell_types)))
+    phi[i,,] = bayess::rdirichlet(n = gene_num, par = rep(30, length(cell_types)))
   }
   if (verbose) {
     message("Parameter phi: ",dim(phi)[1], " pixels x ",dim(phi)[2], " genes x ",
@@ -469,7 +515,7 @@ run_FlexiDeconv <- function(spatial, reference, prior_const,
   }
 
   # tau is cell type x gene
-  tau <- length(cell_types) * rdirichlet(n = length(cell_types), par = rep(10, gene_num))
+  tau <- length(cell_types) * bayess::rdirichlet(n = length(cell_types), par = rep(10, gene_num))
   if (verbose) {
     message("Parameter tau: ", nrow(tau), " cell types x ", ncol(tau), " genes")
   }
@@ -483,7 +529,7 @@ run_FlexiDeconv <- function(spatial, reference, prior_const,
     gamma <- gamma.update(pixel_num, gene_num, length(cell_types), alpha.vi, phi,
                           spatial)
     tau <- tau.update(length(cell_types), gene_num, pixel_num,
-                      reference*PRIOR_CONST, phi, spatial)
+                      reference*prior_const_scaled, phi, spatial)
     alpha.vi <- alpha.update(pixel_num, length(cell_types), alpha.vi, gamma)
     iter <- iter + 1
 
