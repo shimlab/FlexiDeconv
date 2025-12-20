@@ -37,7 +37,7 @@ ELBO <- function(ref.p, gamma.p, tau.p, alpha.p, phi.p, ct.count,
   term6 <- t6(pixel.count, ct.count, gene.count, phi.p, count.data)
   term7 <- t7(ct.count, tau.p)
   gc()
-  print(paste("ELBO took:", (proc.time() - start_time)[3], "seconds"))
+  #print(paste("ELBO took:", (proc.time() - start_time)[3], "seconds"))
   term1 + term2 + term3 + term4 - term5 - term6 - term7
 }
 

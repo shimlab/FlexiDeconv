@@ -1,30 +1,84 @@
 ---
 title: "FlexiDeconv vignette"
 output: rmarkdown::html_vignette
+bibliography: reference.bib
 vignette: >
   %\VignetteIndexEntry{FlexiDeconv vignette}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
 
-## R Markdown
+# FlexiDeconv
+
+FlexiDeconv is a flexible cell type deconvolution method for the Spatial Transcriptomics.
+It infers cell type proportions across pixels by flexibly leveraging the reference, 
+which consists of cell type gene expression profiles typically derived from 
+scRNA-seq data. Nevertheless, user can choose how much the reference should be 
+trusted in the inference process, through the prior weight parameter $w_k$ for 
+every cell type $k=1,2,...$.
+
+This vignette is aimed at walking through the main functionality of FlexiDeconv 
+relating to **inferring the cell type proportion of pixels**, and 
+**making visualizations**.
+
+We acknowledge that some visualizations are borrowed from STdeconvolve [@Miller2022ReferenceFreeDeconvolution].
+
+
+## Loading in the package
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+set.seed(0)
 library(FlexiDeconv)
 ```
 
 
+## Loading in the data
 
+The dataset that will be used in the vignette is borrowed from [@Moffitt2018DryadHypothalamus],
+which has a total of 30 mice, with both female and male. We selected the second mouse 
+because it has the largest number of slices available. To simulate low data signal 
+scenario, we subsampled only two slices, with $slice = -0.09$ and $slice = 0.21$.
+Furthermore, we filtered 135 genes following STdeconvolve's simulation setup [@Miller2022ReferenceFreeDeconvolution],
+in order to be consistent.
 
-```{r}
-set.seed(42)
+Originally, this dataset is an imaging-based MERFISH data, with cell segmentation 
+already performed by the author. Hence, we aggregated the cells to simulate Spatial
+Transcriptomics data, where each pixel has size 100$\mu m$ x 100 $\mu m$. Furthermore, 
+we also aggregated all cells within the selected female mouse to generate a gene 
+expression profile, as visualized below. We treat it as the ground truth gene 
+expression profile.
+
+```{r, fig.width=5, fig.height=3, dpi=150}
 
 data(mouse_hypothalamus)
+p <- visualizeReference(mouse_hypothalamus$ground_truth_geneexp)
+p
+```
+
+
+To simulate imperfect reference, we removed a cell type (OD Mature) from the reference.
+For FlexiDeconv to recover the missing cell type, we appended a single placeholder 
+cell type into the new reference, generated from dirichlet distribution with 
+uniform mean.
+
+This visualization shows the gene expression profile of the reference. Every 
+row represents an unique cell type. 
+
+```{r, fig.width=5, fig.height=3, dpi=150}
+
 new_reference <- appendPlaceholder(mouse_hypothalamus$reference, numPlaceholder=1)
 p <- visualizeReference(new_reference)
 p
 ```
+
+Since the Spatial Transcriptomics data is simulated from MERFISH data, the ground 
+truth cell type proportion per pixel is easily attainable. Before plotting it, 
+we define the color we want for each cell type, to make each cell type as distinct 
+as possible.
 
 ```{r}
 color = c('Astrocyte'='red', 'Endothelial'='orange', 
@@ -33,24 +87,38 @@ color = c('Astrocyte'='red', 'Endothelial'='orange',
              'OD Immature'='yellow', 'OD Mature'='brown',
              'Pericytes'='cyan')
 
+# retrieving the legend object that will be part of the visualization later
 legend_grob <- getLegendGrob(color)
 ```
 
 
+For each cell type within each pixel, the ground truth proportion is defined as:
+$$
+\frac{\text{number of genes originated from this cell type}}{\text{total number of genes}}
+$$
+This visualization is borrowed from STdeconvolve, as acknowledged at the beginning 
+of the markdown file. Every circle represents a pixel, the proportion of cell types
+is denoted as a pie chart. Cell type - color correspondence is shown on the right.
 
-```{r}
+```{r, fig.width=5, fig.height=3, dpi=150}
 plotDeconvRes(mouse_hypothalamus$ground_truth_deconv,
               mouse_hypothalamus$spatial_meta,
               color = color,
               numRow = 1,
               numCol = 2,
-              legend_grob = legend_grob)
+              legend_grob = legend_grob,
+              title = "Ground truth cell type proportion per pixel")
 
 ```
 
+Since the goal is to try to recover OD Mature, we first visualize locations of 
+OD Mature cells. From the plot below, we can see that OD Mature occupies distinct 
+regions in the two slices.
 
+This visualization tool can be used to visualize location of a particular cell 
+type.
 
-```{r}
+```{r, fig.width=5, fig.height=3, dpi=150}
 cellType = 'OD Mature'
 cellType_idx = which(colnames(mouse_hypothalamus$ground_truth_deconv) == cellType)
 plotDeconvRes(mouse_hypothalamus$ground_truth_deconv,
@@ -63,41 +131,76 @@ plotDeconvRes(mouse_hypothalamus$ground_truth_deconv,
 
 ```
 
+To run FlexiDeconv, we use the following setting:
+1. Prior weight = 5 for known cell types
+2. Prior weight = 0.1 for the placeholder
+This is because we trust the gene expression profiles of other cell types to be
+well matched with the ground truth, while giving the placeholder enough freedom 
+for it to explore the parameter space.
+
+Note that prior weight = 5 has a rough interpretation of, relative to the spatial 
+data, reference contributes 5 times as much to the estimated gene expression 
+profile.
+
+Feel free to explore other options of the prior weight and different number 
+of placeholders.
+
 ```{r} 
 prior_const = c(rep(5, 8), 0.1)
-#output = runFlexiDeconv(as.matrix(mouse_hypothalamus$spatial),
-#                         new_reference, 
-#                         prior_const)
+output = runFlexiDeconv(as.matrix(mouse_hypothalamus$spatial),
+                         new_reference, 
+                         prior_const)
 
 ```
 
+With the new result, we need to redefine the color and retrieve new legend.
+The **output** of the FlexiDeconv contains the following:
+1. output\$gamma - unscaled cell type proportions per pixel with dimension
+pixel x cell type, can be normalized by output\$gamma/rowSums(output\$gamma)
+2. output\$tau - unscaled gene expression profile per cell type, with dimension 
+cell type x gene, can be normalized by output\$tau/rowSums(output\$tau)
 
+There are some other information contained within the output object if interested:
+3. ELBO - ELBO for every 50 (default) iterations of Variational Inference
+4. Alpha - estimated alpha parameter
+5. phi - estimated phi parameter
+6. total_iter - total number of iterations
 
 ```{r}
-#color = c('Astrocyte'='red', 'Endothelial'='orange', 
-#             'Ependymal'='black', 'Excitatory'='blue', 
-#             'Inhibitory'='green', 'Microglia'='purple', 
-#             'OD Immature'='yellow', 'Placeholder 1'='brown',
-#             'Pericytes'='cyan')
-#
-#legend_grob2 <- getLegendGrob(color)
+color = c('Astrocyte'='red', 'Endothelial'='orange', 
+             'Ependymal'='black', 'Excitatory'='blue', 
+             'Inhibitory'='green', 'Microglia'='purple', 
+             'OD Immature'='yellow', 'Placeholder 1'='brown',
+             'Pericytes'='cyan')
+
+legend_grob2 <- getLegendGrob(color)
 ```
 
+Plot the result, we have the estimated placeholder set to color brown, hoping
+it will recover the ground truth proportions of OD Mature (which was previously
+colored as brown).
 
+```{r, fig.width=5, fig.height=3, dpi=150}
 
-```{r}
-
-#plotDeconvRes(output$gamma/rowSums(output$gamma),
-#              mouse_hypothalamus$spatial_meta,
-#              color = color,
-#              numRow = 1,
-#              numCol = 2,
-#              legend_grob = legend_grob2)
+plotDeconvRes(output$gamma/rowSums(output$gamma),
+              mouse_hypothalamus$spatial_meta,
+              color = color,
+              numRow = 1,
+              numCol = 2,
+              legend_grob = legend_grob2)
 
 
 ```
 
+By comparing the estimated gene expression profile of Placeholder 1 to the ground 
+truth OD Mature, we confirm that Placeholder 1 is indeed estimating OD Mature.
 
+```{r, fig.width=5, fig.height=3, dpi=150}
+estimatedPlaceholder = output$tau["Placeholder 1",]/sum(output$tau["Placeholder 1",])
+visualizeReference(rbind(estimatedPlaceholder, 
+                         mouse_hypothalamus$ground_truth_geneexp["OD Mature",]))
+
+```
 
 
 
