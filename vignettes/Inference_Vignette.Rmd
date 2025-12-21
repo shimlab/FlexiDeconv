@@ -1,0 +1,42 @@
+---
+title: "Inference_Vignette"
+output: rmarkdown::html_vignette
+bibliography: reference.bib
+vignette: >
+  %\VignetteIndexEntry{FlexiDeconv vignette}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+# Inference
+
+```{r}
+library(FlexiDeconv)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
