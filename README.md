@@ -46,4 +46,4 @@ vignette("FlexiDeconv_Vignette")
 
 ## Other Vignette
 
-- [Interpreting results] (https://shimlab.github.io/FlexiDeconv/Inference_Vignette.html)
+- [Interpreting results](https://shimlab.github.io/FlexiDeconv/Inference_Vignette.html)
