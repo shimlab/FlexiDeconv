@@ -54,8 +54,8 @@ expression profile.
 
 ```{r, fig.width=5, fig.height=3, dpi=150}
 
-data(mouse_hypothalamus)
-p <- visualizeReference(mouse_hypothalamus$ground_truth_geneexp)
+data(mouseHypothalamus)
+p <- visualizeReference(mouseHypothalamus$ground_truth_geneexp)
 p
 ```
 
@@ -70,7 +70,7 @@ row represents an unique cell type.
 
 ```{r, fig.width=5, fig.height=3, dpi=150}
 
-new_reference <- appendPlaceholder(mouse_hypothalamus$reference, numPlaceholder=1)
+new_reference <- appendPlaceholder(mouseHypothalamus$reference, numPlaceholder=1)
 p <- visualizeReference(new_reference)
 p
 ```
@@ -101,8 +101,8 @@ of the markdown file. Every circle represents a pixel, the proportion of cell ty
 is denoted as a pie chart. Cell type - color correspondence is shown on the right.
 
 ```{r, fig.width=5, fig.height=3, dpi=150}
-plotDeconvRes(mouse_hypothalamus$ground_truth_deconv,
-              mouse_hypothalamus$spatial_meta,
+plotDeconvRes(mouseHypothalamus$ground_truth_deconv,
+              mouseHypothalamus$spatial_meta,
               color = color,
               numRow = 1,
               numCol = 2,
@@ -120,9 +120,9 @@ type.
 
 ```{r, fig.width=5, fig.height=3, dpi=150}
 cellType = 'OD Mature'
-cellType_idx = which(colnames(mouse_hypothalamus$ground_truth_deconv) == cellType)
-plotDeconvRes(mouse_hypothalamus$ground_truth_deconv,
-              mouse_hypothalamus$spatial_meta,
+cellType_idx = which(colnames(mouseHypothalamus$ground_truth_deconv) == cellType)
+plotDeconvRes(mouseHypothalamus$ground_truth_deconv,
+              mouseHypothalamus$spatial_meta,
               color = color,
               numRow = 1,
               numCol = 2,
@@ -146,10 +146,10 @@ Feel free to explore other options of the prior weight and different number
 of placeholders.
 
 ```{r} 
-prior_const = c(rep(5, 8), 0.1)
-output = runFlexiDeconv(as.matrix(mouse_hypothalamus$spatial),
-                         new_reference, 
-                         prior_const)
+#prior_const = c(rep(5, 8), 0.1)
+#output = runFlexiDeconv(as.matrix(mouseHypothalamus$spatial),
+#                         new_reference, 
+#                         prior_const)
 
 ```
 
@@ -182,12 +182,12 @@ colored as brown).
 
 ```{r, fig.width=5, fig.height=3, dpi=150}
 
-plotDeconvRes(output$gamma/rowSums(output$gamma),
-              mouse_hypothalamus$spatial_meta,
-              color = color,
-              numRow = 1,
-              numCol = 2,
-              legend_grob = legend_grob2)
+#plotDeconvRes(output$gamma/rowSums(output$gamma),
+#              mouseHypothalamus$spatial_meta,
+#              color = color,
+#              numRow = 1,
+#              numCol = 2,
+#              legend_grob = legend_grob2)
 
 
 ```
@@ -196,9 +196,9 @@ By comparing the estimated gene expression profile of Placeholder 1 to the groun
 truth OD Mature, we confirm that Placeholder 1 is indeed estimating OD Mature.
 
 ```{r, fig.width=5, fig.height=3, dpi=150}
-estimatedPlaceholder = output$tau["Placeholder 1",]/sum(output$tau["Placeholder 1",])
-visualizeReference(rbind(estimatedPlaceholder, 
-                         mouse_hypothalamus$ground_truth_geneexp["OD Mature",]))
+#estimatedPlaceholder = output$tau["Placeholder 1",]/sum(output$tau["Placeholder 1",])
+#visualizeReference(rbind(estimatedPlaceholder, 
+#                         mouseHypothalamus$ground_truth_geneexp["OD Mature",]))
 
 ```
 

@@ -14,8 +14,8 @@
 #'
 #' @examples
 #'
-#' data(mouse_hypothalamus)
-#' new_reference <- appendPlaceholder(mouse_hypothalamus$reference, numPlaceholder=1)
+#' data(mouseHypothalamus)
+#' new_reference <- appendPlaceholder(mouseHypothalamus$reference, numPlaceholder=1)
 #' p <- visualizeReference(new_reference)
 #' p
 #'
@@ -76,14 +76,14 @@ visualizeReference <- function(ref, want_log=F, cluster_col=T, cluster_row=F,
 #'
 #' @examples
 #'
-#' data(mouse_hypothalamus)
+#' data(mouseHypothalamus)
 #' color = c('Astrocyte'='red', 'Endothelial'='orange',
 #' 'Ependymal'='black', 'Excitatory'='blue',
 #' 'Inhibitory'='green', 'Microglia'='purple',
 #' 'OD Immature'='yellow', 'OD Mature'='brown', 'Pericytes'='cyan')
 #' legend_grob <- getLegendGrob(color)
-#' plotDeconvRes(mouse_hypothalamus$ground_truth_deconv,
-#' mouse_hypothalamus$spatial_meta,
+#' plotDeconvRes(mouseHypothalamus$ground_truth_deconv,
+#' mouseHypothalamus$spatial_meta,
 #' color = color,
 #' numRow = 1,
 #' numCol = 2,
@@ -183,7 +183,7 @@ plot_a_grid <- function(plot_lst, num_row, num_col,
   } else {
     combined <- gridExtra::arrangeGrob(plot_grid, legend_grob,
                             ncol = 2,
-                            widths = c(4, 1))  # Adjust legend width as needed
+                            widths = c(4,1))  # Adjust legend width as needed
   }
   grid::grid.newpage()
   grid::grid.draw(combined)
@@ -315,7 +315,7 @@ visAllTopics <- function(theta, pos,
                                   data = theta_ordered_pos,
                                   cols = topicColumns,
                                   legend_name = "CellTypes") +
-      ggplot2::scale_fill_manual(values = setNames(topicCols, paste0("X", colname))) +
+      ggplot2::scale_fill_manual(values = as.vector(setNames(topicCols, paste0("X", colname)))) +
       ggplot2::scale_color_manual(values = group_cols)
   } else {
     p <- ggplot2::ggplot() +
@@ -337,7 +337,7 @@ visAllTopics <- function(theta, pos,
                                   data = theta_ordered_pos,
                                   cols = topicColumns,
                                   legend_name = "CellTypes") +
-      ggplot2::scale_fill_manual(values = setNames(topicCols, paste0("X", colname))) +
+      ggplot2::scale_fill_manual(values = as.vector(setNames(topicCols, paste0("X", colname)))) +
       ggplot2::scale_color_manual(values = group_cols)
   }
 
@@ -387,15 +387,15 @@ get_legend <- function(p) {
 #'
 #' @examples
 #'
-#' data(mouse_hypothalamus)
+#' data(mouseHypothalamus)
 #' color = c('Astrocyte'='red', 'Endothelial'='orange',
 #'           'Ependymal'='black', 'Excitatory'='blue',
 #'           'Inhibitory'='green', 'Microglia'='purple',
 #'           'OD Immature'='yellow', 'OD Mature'='brown',
 #'           'Pericytes'='cyan')
 #' legend_grob <- getLegendGrob(color)
-#' plotDeconvRes(mouse_hypothalamus$ground_truth_deconv,
-#'               mouse_hypothalamus$spatial_meta,
+#' plotDeconvRes(mouseHypothalamus$ground_truth_deconv,
+#'               mouseHypothalamus$spatial_meta,
 #'               color = color,
 #'               numRow = 1,
 #'               numCol = 2,
@@ -416,4 +416,44 @@ getLegendGrob <- function(color) {
   legend_grob <- get_legend(legend_plot)
   return(legend_grob)
 }
+
+
+
+#' Gene expression profiles correlation plot
+#'
+#' @description Plot correlation between two sets of gene expression profiles as
+#' heatmap.
+#'
+#' @param deconGexp1 first cell type gene expression profile with dimension cell type x gene
+#' @param deconGexp2 second cell type gene expression profile with dimension cell type x gene
+#' @param title title for the correlation plot (Default: "Transcriptional correlation")
+#' @param type type of correlation plotted (Default: "pearson")
+#' @param rowlab row label (Default: "Deconvolved cell-types")
+#' @param collab column title (Default: "Ground truth cell-types")
+#'
+#' @return A correlation matrix heatmap plot
+#'
+#' @examples
+#'
+#'
+#' @export
+
+
+corMatrixPlot <- function(deconGexp1, deconGexp2, title = "Transcriptional correlation",
+                            type = "pearson", rowlab = "Deconvolved cell-types",
+                            collab = "Ground truth cell-types") {
+  cormatrix = cor(t(deconGexp1), t(deconGexp2), method = type)
+
+  p = STdeconvolve::correlationPlot(mat = cormatrix,
+                      rowLabs = rowlab, # aka x-axis, and rows of matrix
+                      colLabs = collab, # aka y-axis, and columns of matrix
+                      title = title, annotation = TRUE) +
+
+    ## this function returns a `ggplot2` object, so can add additional aesthetics
+    ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 90, vjust = 0))
+  p$layers[[2]]$aes_params$size <- 2.5
+  return(p)
+}
+
+
 

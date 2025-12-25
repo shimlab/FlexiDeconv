@@ -1,40 +1,163 @@
 ---
-title: "Inference_Vignette"
+title: "Inference vignette"
 output: rmarkdown::html_vignette
 bibliography: reference.bib
 vignette: >
-  %\VignetteIndexEntry{FlexiDeconv vignette}
+  %\VignetteIndexEntry{Inference vignette}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
 
-```
 
 # Inference
+
+Even though FlexiDeconv utilises reference during inference, it is only used as 
+prior information, meaning cell type gene expression profile will be actively 
+estimated using both Spatial Transcriptomics data and the reference. Typically, 
+we invite users to perform interpretation on these estimated cell types (e.g., 
+identifying marker genes), however, we do provide a way of interpreting these 
+cell types as described in this Vignette. 
+
+
+```{r setup, include=FALSE}
+knitr::opts_knit$set(echo = TRUE) 
+```
 
 ```{r}
 library(FlexiDeconv)
 ```
 
 
+For the Spatial Transcriptomics data (mouseHypothalamus), we borrowed from [@Moffitt2018DryadHypothalamus],
+which has a total of 30 mice, with both female and male. We selected the second mouse 
+because it has the largest number of slices available. To simulate low data signal 
+scenario, we subsampled only two slices, with $slice = -0.09$ and $slice = 0.21$.
+Furthermore, we filtered 135 genes following STdeconvolve's simulation setup [@Miller2022ReferenceFreeDeconvolution],
+in order to be consistent.
+
+We provide the deconvolution result by FlexiDeconv after supplying imperfect 
+reference obtained from [@NeMO_dat]. Note that to make the situation more realistic, 
+we reduced the read count of the spatial data by a factor of 30, so that it is 
+closer to a real Visium dataset considering the relatively low genes.
+
+```{r}
+data(imperfectReferenceResult)
+data(mouseHypothalamus)
+```
 
 
+Upon loading the data, we first plot the correlation between the provided gene 
+expression profile against the estimated gene expression profile. This should 
+guide us to infer the identity of the estimated cell types.
+
+```{r, fig.width=10, fig.height=10, dpi=150}
+corMatrixPlot(as.matrix(imperfectReferenceResult$reference), 
+              as.matrix(imperfectReferenceResult$tau),
+              rowlab = "Reference cell types",
+              collab = "Estimated cell types")
+
+```
 
 
+The first step of the identity assignment process assigns cell types to their
+original provided cell type, if the correlation between provided and estimated 
+gene expression profile exceeds certain threshold. This threshold should be 
+determined by the user.
+
+From different experiments, we found that this threshold value vary for different 
+gene set size. The intuitition behind that is including more genes that are lowly 
+expressed increases the correlation (as those differentiating marker genes now 
+only take a small subset of the entire gene set). Hence, we would suggest this 
+threshold value should be selected based on the correlation matrix plot from above.
+
+```{r}
+originalIdentityAssigned = identityAssignment(imperfectReferenceResult$tau, 
+                                              imperfectReferenceResult$reference, 
+                                              imperfectReferenceResult$gamma,
+                                              threshold = 0.7)
+```
+
+The second step of the identity assignment process assigns unlabelled cell types 
+(i.e., unlabelled in step 1) to other cell types, if its correlation with 
+other provided cell type is greater than an user defined threshold.
+
+It is possible that FlexiDeconv "gives up" on a (or some) cell type(s) by ignoring 
+the prior at all, and use this cell type to estimate other ones.
+
+```{r}
+otherIdentityAssigned = identityAssignmentOther(imperfectReferenceResult$tau, 
+                                                imperfectReferenceResult$reference, 
+                                                imperfectReferenceResult$gamma,
+                                                originalIdentityAssigned$unknownIdentity, 
+                                                originalIdentityAssigned$assignedDeconvRes, 
+                                                originalIdentityAssigned$assignedGeneExp, 
+                                                threshold = 0.7)
+```
+The final third step of the identity assignment process clusters the rest 
+unknown cell types. The procedure is as follows:
+1. For the unknown cell types, order from least abundant to most abundant.
+2. From the least abundant cell type, find the cell type (within the unknown ones) 
+with maximum correlation, if the correlation is greater than an user-defined 
+threshold, then the cell type is merged.
+
+```{r}
+unknownClusteredCT = unknownCluster(imperfectReferenceResult$tau,  
+                                          imperfectReferenceResult$gamma,
+                                          otherIdentityAssigned$unknownIdentity, 
+                                          otherIdentityAssigned$assignedDeconvRes,
+                                          otherIdentityAssigned$assignedGeneExp, 
+                                          threshold = 0.6)
+```
+Here we plot correlation matrix between the final assigned cell types to the 
+ground truth. We observe that most of the cell types are highly correlated with 
+a single ground truth cell type.
+
+```{r, fig.width=10, fig.height=10, dpi=150}
+corMatrixPlot(as.matrix(mouseHypothalamus$ground_truth_geneexp),
+              as.matrix(unknownClusteredCT$finalGeneExp),
+              rowlab = "Final output cell types from FlexiDeconv")
+
+```
+
+Since this is simulation, given the final output after applying interpretations, 
+we map each cell type to the ground truth based on highest correlation and plot 
+our result.
+
+```{r}
+color = c('Astrocyte'='red', 'Endothelial'='orange', 
+             'Ependymal'='black', 'Excitatory'='blue', 
+             'Inhibitory'='green', 'Microglia'='purple', 
+             'OD Immature'='yellow', 'OD Mature'='brown',
+             'Pericytes'='cyan')
+est_gt_corr = cor(as.matrix(t(mouseHypothalamus$ground_truth_geneexp)),
+                  t(as.matrix(unknownClusteredCT$finalGeneExp/rowSums(as.matrix(unknownClusteredCT$finalGeneExp)))),
+                  method = "pearson")
+new_color = rep("black", ncol(unknownClusteredCT$finalDeconvRes))
+names(new_color) = colnames(unknownClusteredCT$finalDeconvRes)
+for (ct in names(new_color)) {
+  new_color[ct] = color[which.max(est_gt_corr[,ct])]
+}
+
+# retrieving the legend object that will be part of the visualization later
+legend_grob <- getLegendGrob(new_color)
+```
 
 
+Then we plot the deconvolution result. Since we are using imperfect reference, 
+we do not expect the result to be 100% aligned with the ground truth. But we 
+can see that most of the ground truth cell types are recovered.
 
+```{r, fig.width=11.5, fig.height=4, dpi=150}
+plotDeconvRes(unknownClusteredCT$finalDeconvRes/rowSums(unknownClusteredCT$finalDeconvRes),
+              mouseHypothalamus$spatial_meta,
+              color = new_color,
+              numRow = 1,
+              numCol = 2,
+              legend_grob = legend_grob,
+              title = "Deconvolved cell type proportion per pixel")
 
-
-
-
-
-
-
-
+```
 
 
 

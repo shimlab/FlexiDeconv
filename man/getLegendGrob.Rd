@@ -18,15 +18,15 @@ color, then retrieving only the legend object and return
 }
 \examples{
 
-data(mouse_hypothalamus)
+data(mouseHypothalamus)
 color = c('Astrocyte'='red', 'Endothelial'='orange',
           'Ependymal'='black', 'Excitatory'='blue',
           'Inhibitory'='green', 'Microglia'='purple',
           'OD Immature'='yellow', 'OD Mature'='brown',
           'Pericytes'='cyan')
 legend_grob <- getLegendGrob(color)
-plotDeconvRes(mouse_hypothalamus$ground_truth_deconv,
-              mouse_hypothalamus$spatial_meta,
+plotDeconvRes(mouseHypothalamus$ground_truth_deconv,
+              mouseHypothalamus$spatial_meta,
               color = color,
               numRow = 1,
               numCol = 2,
