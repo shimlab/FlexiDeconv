@@ -38,8 +38,12 @@ remotes::install_github('shimlab/FlexiDeconv', build_vignettes = TRUE)
 library(FlexiDeconv)
 ```
 
-3.  View the vignette.
+3.  View the vignette (or also view [here](https://shimlab.github.io/FlexiDeconv/FlexiDeconv_Vignette.html)).
 
 ``` r
 vignette("FlexiDeconv_Vignette")
 ```
+
+## Other Vignette
+
+- [Interpreting results] (https://shimlab.github.io/FlexiDeconv/Inference_Vignette.html)
