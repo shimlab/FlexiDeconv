@@ -12,8 +12,8 @@
 #'
 #' @examples
 #'
-#' data(mouse_hypothalamus)
-#' new_reference <- appendPlaceholder(mouse_hypothalamus$reference, numPlaceholder=1)
+#' data(mouseHypothalamus)
+#' new_reference <- appendPlaceholder(mouseHypothalamus$reference, numPlaceholder=1)
 #'
 #' @export
 

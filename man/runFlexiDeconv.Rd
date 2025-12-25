@@ -39,10 +39,10 @@ FlexiDeconv algorithm to obtain:
 }
 \examples{
 
-data(mouse_hypothalamus)
-new_reference <- appendPlaceholder(mouse_hypothalamus$reference, numPlaceholder=1)
+data(mouseHypothalamus)
+new_reference <- appendPlaceholder(mouseHypothalamus$reference, numPlaceholder=1)
 prior_const = c(rep(5, 8), 0.1)
-output = runFlexiDeconv(as.matrix(mouse_hypothalamus$spatial),
+output = runFlexiDeconv(as.matrix(mouseHypothalamus$spatial),
 new_reference,
 prior_const)
 
