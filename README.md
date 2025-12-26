@@ -10,6 +10,13 @@ All source code and software in this repository is free software; you can redist
 
 # Installation
 
+Some functions implemented as part of FlexiDeconv uses functions previously written by STdeconvolve, hence users need to install STdeconvolve first using the code below:
+
+``` r
+require(remotes)
+remotes::install_github('JEFworks-Lab/STdeconvolve')
+```
+
 Currently, `FlexiDeconv` is only available in R, via `remotes`. It can be installed as follows:
 
 ``` r
@@ -21,14 +28,7 @@ Note that the R version must be \>= 4.3.0
 
 Installation should be completed within a few minutes.
 
-## Installation
-
-Some functions implemented as part of FlexiDeconv uses functions previously written by STdeconvolve, hence users need to install STdeconvolve first using the code below:
-
-``` r
-require(remotes)
-remotes::install_github('JEFworks-Lab/STdeconvolve')
-```
+## Vignette
 
 If you wish to view the vignette, please follow the following step.
 
