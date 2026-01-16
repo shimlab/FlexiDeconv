@@ -36,7 +36,7 @@ If you wish to view the vignette, please follow the following step.
 
 ``` r
 require(remotes)
-remotes::install_github('shimlab/FlexiDeconv', build_vignettes = TRUE)
+remotes::install_github('shimlab/FlexiDeconv', build_vignettes = TRUE, force = TRUE)
 ```
 
 2.  Load the package.
