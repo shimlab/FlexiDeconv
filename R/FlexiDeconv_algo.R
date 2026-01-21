@@ -39,6 +39,7 @@ ELBO <- function(ref.p, gamma.p, tau.p, alpha.p, phi.p, ct.count,
   gc()
   #print(paste("ELBO took:", (proc.time() - start_time)[3], "seconds"))
   term1 + term2 + term3 + term4 - term5 - term6 - term7
+  print("Hello world")
 }
 
 #' Helper function to calculate first term of the ELBO: E[p(beta)])
