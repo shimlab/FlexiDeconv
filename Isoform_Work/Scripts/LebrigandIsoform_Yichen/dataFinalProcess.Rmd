@@ -1,0 +1,282 @@
+---
+title: "dataFinalProcess"
+output: html_document
+date: "2025-07-23"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Import data + Libraries
+
+```{r}
+source("../functions(new).R")
+library(VennDiagram)
+library(Seurat)
+isoform_reference = readRDS("../../Data/Isoform/LebrigandIsoform/GSE121891_unnormalized_ref.rds")
+isoform_spatial = readRDS("../../Data/Isoform/LebrigandIsoform/GSE153859_MOB.rds")
+```
+
+Get different spatial data
+
+```{r}
+gene_shortread = t(isoform_spatial@assays$Spatial$counts) # 918 pixels x 31053 genes
+gene_longread = t(isoform_spatial@assays$ISOG$counts) # 918 pixels x 18724 genes
+isoform_longread = t(isoform_spatial@assays$ISO$counts) # 918 pixels x 23560 isoforms
+```
+
+Reduce down to gene level
+
+```{r}
+isoform_longread_rep = isoform_longread
+colnames(isoform_longread_rep) <- sub("\\..*$", "", colnames(isoform_longread_rep))
+df <- as.data.frame(isoform_longread_rep)
+isoform_longread_reduced = matrix(0, nrow = nrow(isoform_longread_rep), 
+                                  ncol = length(unique(colnames(df))))
+rownames(isoform_longread_reduced) = rownames(isoform_longread_rep)
+colnames(isoform_longread_reduced) = unique(colnames(df))
+for (gene in colnames(isoform_longread_reduced)) {
+  isoform_longread_reduced[,gene] = rowSums(df[,which(names(df)==gene),drop=F])
+}
+
+```
+
+
+
+
+
+Get some other data
+```{r}
+spatial_meta = isoform_spatial@images$slice1@coordinates
+```
+
+Save meta data
+```{r}
+saveRDS(spatial_meta, "../../Data/Isoform/LebrigandIsoform/mob_metadata.rds")
+```
+
+
+Spatially variable gene selection
+```{r}
+isoform_spatial <- FindSpatiallyVariableFeatures(
+  isoform_spatial,
+  assay = "Spatial",
+  selection.method = "moransi"
+)
+
+isoform_spatial <- FindSpatiallyVariableFeatures(
+  isoform_spatial,
+  assay = "ISOG",
+  selection.method = "moransi"
+)
+
+isoform_spatial <- FindSpatiallyVariableFeatures(
+  isoform_spatial,
+  assay = "ISO",
+  selection.method = "moransi"
+)
+```
+
+
+
+
+
+
+Get spatially variable genes out
+```{r}
+order_df <- function(df) {
+  return(df[order(df$moransi.spatially.variable.rank), ])
+}
+
+spatial_top10000 = which(isoform_spatial@assays$Spatial@meta.features$moransi.spatially.variable.rank <= 10000)
+isog_top10000 = which(isoform_spatial@assays$ISOG@meta.features$moransi.spatially.variable.rank <= 10000)
+iso_top10000 = which(isoform_spatial@assays$ISO@meta.features$moransi.spatially.variable.rank <= 10000)
+
+spatial_topgenes = isoform_spatial@assays$Spatial@meta.features[spatial_top10000,]
+isog_topgenes = isoform_spatial@assays$ISOG@meta.features[isog_top10000,]
+iso_topgenes = isoform_spatial@assays$ISO@meta.features[iso_top10000,]
+
+spatial_topgenes = order_df(spatial_topgenes)
+isog_topgenes = order_df(isog_topgenes)
+iso_topgenes = order_df(iso_topgenes)
+
+```
+
+
+
+```{r}
+iso_topgenes_rep = as.matrix(iso_topgenes)
+rownames(iso_topgenes_rep) = sub("\\..*$", "", rownames(iso_topgenes_rep))
+wanted_genes = unique(rownames(iso_topgenes_rep))[1:1000]
+saveRDS(isoform_longread_reduced[,wanted_genes], "../../Data/Isoform/LebrigandIsoform/proc_data/iso_LR_reduced.rds")
+```
+
+
+
+Get overlapping genes
+
+```{r}
+reference_genes = colnames(isoform_reference)
+
+
+spatial_overlap = intersect(reference_genes, rownames(spatial_topgenes))
+spatial_topgene_left = order_df(spatial_topgenes[spatial_overlap,])
+
+isog_overlap = intersect(reference_genes, rownames(isog_topgenes))
+isog_topgene_left = order_df(isog_topgenes[isog_overlap,])
+
+isoform_dictionary = list()
+rowname_sep = strsplit(rownames(iso_topgenes), split = "\\.\\.")
+gene_names = c()
+isoform_names = c()
+isoform_to_keep = c()
+
+for (i in 1:length(rowname_sep)) {
+  curr_g = rowname_sep[[i]][1]
+  gene_names = c(gene_names, rowname_sep[[i]][1])
+  
+  if (curr_g %in% reference_genes) {
+    isoform_dictionary[[curr_g]] = c(isoform_dictionary[[curr_g]], rowname_sep[[i]][2])
+    isoform_to_keep = c(isoform_to_keep, rownames(iso_topgenes)[i])
+  }
+  isoform_names = c(isoform_names, rowname_sep[[i]][2])
+  
+}
+iso_topgenes_left = order_df(iso_topgenes[isoform_to_keep,])
+```
+
+
+Final top 1000 genes
+
+```{r}
+spatial_top1000 = rownames(spatial_topgene_left)[1:1000]
+isog_top1000 = rownames(isog_topgene_left)[1:1000]
+iso_top1000 = c()
+genes_captured = c()
+rowname_sep = strsplit(rownames(iso_topgenes_left), split = "\\.\\.")
+for (i in 1:nrow(iso_topgenes_left)) {
+  if (!rowname_sep[[i]][1] %in% genes_captured) {
+    genes_captured = c(genes_captured, rowname_sep[[i]][1])
+    iso_top1000 = c(iso_top1000, rownames(iso_topgenes_left)[i])
+  } else {
+    iso_top1000 = c(iso_top1000, rownames(iso_topgenes_left)[i])
+  }
+  if (length(genes_captured) == 1000) {
+    break
+  }
+}
+venn.plot <- draw.triple.venn(
+     area1 = 1000,
+     area2 = 1000,
+     area3 = 1000,
+     n12 = length(intersect(spatial_top1000, isog_top1000)),
+     n23 = length(intersect(isog_top1000, genes_captured)),
+     n13 = length(intersect(spatial_top1000, genes_captured)),
+     n123 = length(Reduce(intersect, list(spatial_top1000, isog_top1000, genes_captured))),
+     category = c("Gene Shortread", "Gene Longread", "Isoform Longread"),
+     fill = c("red", "green", "blue")
+ )
+```
+
+
+```{r}
+spatial_final = gene_shortread[,spatial_top1000]
+positive_count = names(which(rowSums(isoform_reference[,spatial_top1000]) > 0))
+spatial_ref = isoform_reference[positive_count,spatial_top1000]/rowSums(isoform_reference[positive_count,spatial_top1000])
+
+isog_final = gene_longread[,isog_top1000]
+positive_count = names(which(rowSums(isoform_reference[,isog_top1000]) > 0))
+isog_ref = isoform_reference[positive_count,isog_top1000]/rowSums(isoform_reference[positive_count,isog_top1000])
+
+isodict_final = list()
+rowname_sep = strsplit(iso_top1000, split = "\\.\\.")
+for (i in 1:length(rowname_sep)) {
+  curr_g = rowname_sep[[i]][1]
+  isodict_final[[curr_g]] = c(isodict_final[[curr_g]], paste("..",rowname_sep[[i]][2],sep=""))
+}
+
+iso_final = isoform_longread[,iso_top1000]
+positive_count = names(which(rowSums(isoform_reference[,genes_captured]) > 0))
+iso_ref = isoform_reference[positive_count,genes_captured]/rowSums(isoform_reference[positive_count,genes_captured])
+
+```
+
+
+```{r}
+min_spatial_ref = min(spatial_ref[spatial_ref>0])
+spatial_ref[spatial_ref==0] = min_spatial_ref/10
+
+min_isog_ref = min(isog_final[isog_final>0])
+isog_ref[isog_ref==0] = min_isog_ref/10
+
+min_iso_ref = min(iso_final[iso_final>0])
+iso_ref[iso_ref==0] = min_iso_ref/10
+```
+
+Save everything
+
+```{r}
+saveRDS(spatial_final, "../../Data/Isoform/LebrigandIsoform/proc_data/gene_SR_spatial.rds")
+saveRDS(spatial_ref, "../../Data/Isoform/LebrigandIsoform/proc_data/gene_SR_ref.rds")
+
+saveRDS(isog_final, "../../Data/Isoform/LebrigandIsoform/proc_data/gene_LR_spatial.rds")
+saveRDS(isog_ref, "../../Data/Isoform/LebrigandIsoform/proc_data/gene_LR_ref.rds")
+
+saveRDS(iso_final, "../../Data/Isoform/LebrigandIsoform/proc_data/iso_LR_spatial.rds")
+saveRDS(iso_ref, "../../Data/Isoform/LebrigandIsoform/proc_data/iso_LR_ref.rds")
+saveRDS(isodict_final, "../../Data/Isoform/LebrigandIsoform/proc_data/iso_dict.rds")
+```
+
+
+# Reload
+
+```{r}
+spatial_final = readRDS("../../Data/Isoform/LebrigandIsoform/proc_data/gene_SR_spatial.rds")
+spatial_ref = readRDS("../../Data/Isoform/LebrigandIsoform/proc_data/gene_SR_ref.rds")
+
+isog_final = readRDS("../../Data/Isoform/LebrigandIsoform/proc_data/gene_LR_spatial.rds")
+isog_ref = readRDS("../../Data/Isoform/LebrigandIsoform/proc_data/gene_LR_ref.rds")
+
+iso_final = readRDS("../../Data/Isoform/LebrigandIsoform/proc_data/iso_LR_spatial.rds")
+iso_ref = readRDS("../../Data/Isoform/LebrigandIsoform/proc_data/iso_LR_ref.rds")
+isodict_final = readRDS("../../Data/Isoform/LebrigandIsoform/proc_data/iso_dict.rds")
+
+```
+
+
+Prior correlation
+
+```{r}
+cor_matrix_plot_gt(as.matrix(spatial_ref), title='Gene Shortread Transcription Profile')
+
+cor_matrix_plot_gt(as.matrix(isog_ref), title='Gene Longread Transcription Profile')
+
+cor_matrix_plot_gt(as.matrix(iso_ref), title='Isoform Longread Transcription Profile')
+```
+
+
+Prior constant
+Start with 0.1 for all
+```{r}
+spatial_pw = rep(0.1, dim(spatial_ref)[1])
+isog_pw = rep(0.1, dim(isog_ref)[1])
+iso_pw = rep(0.1, dim(iso_ref)[1])
+```
+
+Save prior weights
+```{r}
+saveRDS(spatial_pw, "../../Data/Isoform/LebrigandIsoform/proc_data/gene_SR_pw.rds")
+saveRDS(isog_pw, "../../Data/Isoform/LebrigandIsoform/proc_data/gene_LR_pw.rds")
+saveRDS(iso_pw, "../../Data/Isoform/LebrigandIsoform/proc_data/iso_LR_pw.rds")
+
+```
+
+
+
+
+
+
+
+
+

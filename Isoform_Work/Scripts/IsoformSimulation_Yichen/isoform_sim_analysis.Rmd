@@ -1,0 +1,120 @@
+---
+title: "isoform_sim_analysis"
+output: html_document
+date: "2025-06-03"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Import libraries and files
+
+```{r}
+library(STdeconvolve)
+source("../functions(new).R")
+
+result = readRDS("../../Data/Isoform/Simulation/results/initialRes/initialOutput.rds")
+gt_deconv = readRDS("../../Data/Isoform/Simulation/gt_celltype_compositions.rds")
+gt_gene_exp = readRDS("../../Data/Isoform/Simulation/reference.rds")
+pos = readRDS("../../Data/Isoform/Simulation/gt_pos.rds")
+isoform_dict = readRDS("../../Data/Isoform/Simulation/isoform_dict.rds")
+gt_isoform_prob = readRDS("../../Data/Isoform/Simulation/gt_isoform_prob.rds")
+```
+
+
+# Deconvolution
+
+```{r}
+deconv_prop = result$gamma/rowSums(result$gamma)
+rownames(deconv_prop) = rownames(gt_deconv)
+colnames(deconv_prop) = colnames(gt_deconv)
+```
+
+```{r}
+vizAllTopics(gt_deconv, pos)
+```
+
+# Cell type gene expression matrix comparison
+
+```{r}
+comparison_matrix = matrix(0, nrow = 2*nrow(gt_gene_exp), ncol = ncol(gt_gene_exp))
+idx = 1
+for (i in 1:nrow(gt_gene_exp)) {
+  comparison_matrix[idx,] = gt_gene_exp[i,]
+  comparison_matrix[idx+1,] = result$tau[i,]/sum(result$tau[i,])
+  idx = idx + 2
+}
+rownames(comparison_matrix) = c("GT C1", "Estimated C1",
+                                "GT C2", "Estimated C2",
+                                "GT C3", "Estimated C3",
+                                "GT C4", "Estimated C4",
+                                "GT C5", "Estimated C5",
+                                "GT C6", "Estimated C6")
+visualize_reference(comparison_matrix, want_log=F, cluster_col=F)
+```
+
+# Isoform prob
+```{r}
+interested_gene_pool = c()
+for (i in 1:length(isoform_dict)) {
+  if (length(isoform_dict[[i]]) > 1) {
+    interested_gene_pool = c(interested_gene_pool, i)
+  }
+}
+sample_size = 20
+max_unique_isoform = 5
+gene_sample = sample(interested_gene_pool, sample_size)
+num_cell_type = nrow(gt_gene_exp)
+
+isoform_as_array = matrix(0, nrow = num_cell_type * sample_size * 3, 
+                          ncol = max_unique_isoform)
+isoform_pos_x = rep(rep(seq(1:sample_size),each=3), num_cell_type)*3
+isoform_pos_y = c(rep(c(2,4,6),sample_size),rep(c(10,12,14),sample_size),
+                  rep(c(18,20,22),sample_size),rep(c(26,28,30),sample_size),
+                  rep(c(34,36,38),sample_size),rep(c(42,44,46),sample_size))*(-1)
+isoform_pos = data.frame(x=isoform_pos_x,y=isoform_pos_y)
+
+k = 1
+for (i in 1:num_cell_type) {
+  for (j in 1:sample_size) {
+    vec = numeric(max_unique_isoform)
+    vec[1:length(gt_isoform_prob[[i,gene_sample[j]]])] = gt_isoform_prob[[i,gene_sample[j]]]
+    isoform_as_array[k,] = vec; k = k+1;
+    for (m in 1:length(isoform_dict[[gene_sample[j]]])) {
+      vec[m] = result$f[i,paste("g",gene_sample[j],"i",m,sep="")]
+    }
+    isoform_as_array[k,] = vec
+    k = k + 1;
+    isoform_as_array[k,1] = gt_gene_exp[i,gene_sample[j]]/sum(gt_gene_exp[,gene_sample[j]])
+    isoform_as_array[k,2] = 1-gt_gene_exp[i,gene_sample[j]]/sum(gt_gene_exp[,gene_sample[j]])
+    k = k + 1
+  }
+}
+
+vizAllTopics(isoform_as_array, isoform_pos, r=1, showLegend=F)
+```
+
+```{r}
+gene_picked = 110
+gene_names = paste("g",gene_picked,isoform_dict[[gene_picked]],sep="")
+our_estimation = result$f[,gene_names]
+
+check_matrix = matrix(0, nrow=nrow(our_estimation), ncol=ncol(our_estimation))
+for (i in 1:nrow(check_matrix)) {
+  check_matrix[i,] = gt_isoform_prob[,gene_picked][[i]]  
+}
+colnames(check_matrix) = colnames(our_estimation)
+rownames(check_matrix) = rownames(our_estimation)
+print("Ground Truth")
+print(check_matrix)
+print("Our Estimation")
+print(our_estimation)
+
+
+```
+
+
+
+
+
