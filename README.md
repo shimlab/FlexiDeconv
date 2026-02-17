@@ -54,3 +54,4 @@ vignette("FlexiDeconv_Vignette")
 ## Other Vignette
 
 - [Interpreting results](https://shimlab.github.io/FlexiDeconv/Inference_Vignette.html)
+- [scRNAseq to Reference](https://shimlab.github.io/FlexiDeconv/scRNAseq_to_ref_Vignette.html)
