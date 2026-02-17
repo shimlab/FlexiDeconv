@@ -25,3 +25,15 @@
 #' @usage data(imperfectReferenceResult)
 "imperfectReferenceResult"
 
+
+#' Sample data used in the scRNAseq to reference conversion procedurem
+#'
+#' @format It contains scRNAseq data as well as the spatial data used to mimic
+#' the procedure of generating reference based on scRNAseq data.
+#'
+#' @source \url{https://assets.nemoarchive.org/dat-61kfys3}
+#'
+#' @usage data(scRNAseq_to_reference)
+"scRNAseq_to_reference"
+
+

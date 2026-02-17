@@ -1,0 +1,149 @@
+---
+title: "scRNAseq_to_ref"
+output: html_document
+date: "2026-02-15"
+---
+
+# scRNAseq to Reference
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+In this vignette, we aim to describe default process of FlexiDeconv to convert 
+scRNAseq data to reference. The process uses three input datasets:
+1. Spatial data with dimension pixel x gene
+2. scRNAseq data with dimension cell x gene
+3. Cell type annotation for every cell within scRNAseq, as a vector
+
+For this vignette, we use the spatial data obtained from [@Moffitt2018DryadHypothalamus]
+and scRNAseq data from [@NeMO_dat]. Note that the process described here is 
+slightly different to the actual imperfect reference section in the paper, for 
+the following purposes:
+1. No redundant gene filtering was done in the actual paper, because the geneset 
+size is already quite limited, there is no point to filter genes for speed 
+purposes.
+2. No variable gene selection was done in the actual paper, same reason as above.
+3. The scRNAseq dataset only contains a small subset because the original dataset 
+was too large.
+
+
+Load in the libraries and data
+```{r}
+library(FlexiDeconv)
+library(STdeconvolve)
+library(ggplot2)
+library(ggdist)
+```
+
+```{r}
+data(scRNAseq_to_reference)
+```
+
+Spatial data sample (5 pixels x 5 genes)
+Note that the rownames are simulated pixel barcodes.
+```{r}
+scRNAseq_to_reference$spatial[1:5,1:5]
+```
+scRNAseq data sample (5 cells x 5 genes)
+
+```{r}
+scRNAseq_to_reference$scRNAseqCount[1:5,1:5]
+```
+
+scRNAseq cell type data (5 cells)
+
+```{r}
+scRNAseq_to_reference$scRNAseqCellType[1:5]
+```
+
+# Step 1: human protein coding genes filter
+
+Typically, for performing deconvolution on Spatial Transcriptomics data obtained
+from human tissues, we would filter out non-human protein coding genes. However, 
+since the current spatial data is from mouse, we do not perform such procedure.
+
+For dataset size issues, we decide to leave this part blank and invite users to 
+filter for human protein coding genes themselves.
+
+# Step 2: find intersection gene set
+
+Here we find interesection gene set between spatial data and scRNAseq data.
+
+```{r}
+common_geneset = commonGeneFilter(scRNAseq_to_reference$spatial,
+                                  scRNAseq_to_reference$scRNAseqCount)
+```
+
+# Step 3: remove redundant genes
+
+Here we remove redundant genes, defined as genes that have 0 counts across all 
+pixels or across all cells. 
+
+```{r}
+remove_redundant = redundantGeneFilter(common_geneset$spatial, common_geneset$scRNAseq)
+```
+
+
+# Step 4: retain variable genes
+
+Here we select variable genes using STdeconvolve's default gene selection method.
+The purpose of step 4 is to reduce geneset size. Note that we only use spatial 
+data for variable gene selection here.
+
+Up to this point, spatial data is finalized.
+
+```{r}
+variableGenes = t(STdeconvolve::restrictCorpus(t(as.matrix(remove_redundant$spatial)), 
+                                        removeAbove = 1.0,
+                                        removeBelow = 0.01,
+                                        alpha = 0.05,
+                                        plot = F,
+                                        verbose = T))
+variableGenesData = list(spatial = variableGenes,
+                         scRNAseq = remove_redundant$scRNAseq[,colnames(variableGenes)])
+
+
+```
+
+# Step 5: remove outlier cells
+
+Finally, we remove outlier cells in scRNAseq data, with outlier cells defined as 
+follows:
+1. Cells with total gene count 1.5\*IQR above Q3 of all cells within *current cell type*.
+2. Gene ranked _lowerThresholdRank_ (default 2) having less than _lowerThresholdCount_
+counts (default 3). For example, under the current default setting, if the second 
+highest gene count within a cell is below 3, then we remove this cell. It is motivated
+by keep cells having sufficient count in the marker genes.
+
+We also plot (rain cloud plot) the distribution of total read depth (total gene count) 
+for every cell type.
+
+```{r}
+removeOutlierCells = outlierCellRemoval(variableGenesData$scRNAseq, 
+                                        scRNAseq_to_reference$scRNAseqCellType,
+                                        lowerThresholdRank = 2,
+                                        lowerThresholdCount = 3)
+
+```
+
+# Step 6: form reference
+
+Finally, we make reference by:
+1. For every cell type, find all cells belonging to current cell type
+2. Sum the raw gene counts across all cells
+3. Normalize the overall gene count for this cell type such that the sum is 1.
+
+```{r}
+reference = formReference(removeOutlierCells$scRNAseq, removeOutlierCells$celltypes)
+```
+
+```{r}
+visualizeReference(reference)
+```
+
+
+
+
