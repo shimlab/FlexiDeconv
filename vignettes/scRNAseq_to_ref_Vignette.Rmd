@@ -143,7 +143,26 @@ reference = formReference(removeOutlierCells$scRNAseq, removeOutlierCells$cellty
 ```{r}
 visualizeReference(reference)
 ```
+# User-input reference
+
+We also allow user to input their own cell type x gene reference, with some caveats
+addressed here.
+
+```{r}
+data(reference_ready)
+reference_ready[1:5,1:5]
+```
+The example reference used here is exactly the same as above. There are zeros 
+in the reference, which is not allowed by FlexiDeconv. The default workaround 
+is to replace zero by 0.1 x smallest non-zero value in the reference, then we 
+rescale the reference to make row sums be 1.
+
+```{r}
+ref_replace_zero <- replaceZero(reference_ready, zeroFillFactor = 0.1)
+ref_replace_zero[1:5,1:5]
+```
 
 
-
-
+```{r}
+rowSums(as.matrix(ref_replace_zero))
+```

@@ -227,3 +227,30 @@ formReference <- function(scRNAseq, celltype, minCell = 25, emptyFill = 0.1) {
 }
 
 
+#' Replace 0s in the reference
+#'
+#' @description For user-provided reference, replace 0 by 0.1 (default) times the
+#' minimum non-zero value in the reference
+#'
+#' @param reference user-provided reference with dimension cell type x gene
+#' @param zeroFillFactor user-configurable factor for determining the factor to
+#' multiply the minimum non-zero value by, to replace 0s
+#'
+#' @return reference with dimension cell type x gene
+#'
+#' @examples
+#'
+#' data(reference_ready)
+#' ref_replace_zero <- replaceZero(reference_ready, zeroFillFactor = 0.1)
+#'
+#' @export
+
+
+
+replaceZero <- function(reference, zeroFillFactor = 0.1) {
+
+  min_nonzero = min(reference[reference != 0])
+  reference[reference == 0] = zeroFillFactor * min_nonzero
+  return(reference/rowSums(as.matrix(reference)))
+
+}

@@ -37,3 +37,13 @@
 "scRNAseq_to_reference"
 
 
+
+#' Example for allowing user to input their own reference matrix
+#'
+#' @format It contains reference in the format of cell type x gene. The purpose
+#' is to use this dataset to demonstrate that user can input their own reference.
+#'
+#' @source \url{https://assets.nemoarchive.org/dat-61kfys3}
+#'
+#' @usage data(reference_ready)
+"reference_ready"
