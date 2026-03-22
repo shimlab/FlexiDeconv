@@ -143,6 +143,7 @@ reference = formReference(removeOutlierCells$scRNAseq, removeOutlierCells$cellty
 ```{r}
 visualizeReference(reference)
 ```
+
 # User-input reference
 
 We also allow user to input their own cell type x gene reference, with some caveats
