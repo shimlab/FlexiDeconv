@@ -1,0 +1,624 @@
+---
+title: "dataFinalProcessing_amended"
+output: html_document
+date: "2026-02-16"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Import data + Libraries
+
+```{r}
+source("../functions(new).R")
+library(VennDiagram)
+library(Seurat)
+library(STdeconvolve)
+library(dplyr)
+
+# isoform_reference = readRDS("../../Data/Isoform/LebrigandIsoform/references/GSE121891_unnormalized_ref_box.rds")
+isoform_spatial = readRDS("../../Data/Isoform/LebrigandIsoform/GSE153859_MOB.rds")
+
+# read count data
+# gene (18560) x cell (51426)
+# reference: cell x gene
+raw_counts <- read.csv(file="../../Data/Isoform/LebrigandIsoform/GSE121891_OB_6_runs_processed_seurat.dge.csv")
+isoform_reference = t(raw_counts)
+
+# process metadata
+# counts (51426) x information (8 types)
+metadata<-read.table(file="../../Data/Isoform/LebrigandIsoform/GSE121891_OB_metaData_seurat.csv",sep=",", header=TRUE)
+```
+
+## Get different spatial data
+
+```{r}
+gene_shortread = t(isoform_spatial@assays$Spatial$counts) # 918 pixels x 31053 genes
+gene_longread = t(isoform_spatial@assays$ISOG$counts) # 918 pixels x 18724 genes
+isoform_longread = t(isoform_spatial@assays$ISO$counts) # 918 pixels x 23560 isoforms
+
+## Question: Is he sure that this represents each row is a particular pixel? Their rownames 
+##           seem more like DNA barcodes e.g. TTCGGGACTAATCGCG-1
+## Answer: Yes it is the actual coordinates, can see via `isoform_spatial@images$slice1@coordinates`
+## Follow up question: Why is coordinates represented in DNA barcode???
+
+```
+
+Diagnostic summary test to see if gene_LR counts are different to that of isoform_LR, if they are then it is due to QC differences.
+Note: Does appear to be due to QC differences, that is ok and just be aware of gene_LR differences when comparing later with aggregated isoforM_LR,know that they are not the same thing
+```{r}
+# set.seed(1)
+# genes = names(Filter(function(x) length(x) == 2, isoform_dict))
+# sampled_genes = sample(genes, 10)
+# 
+# print(sampled_genes)
+# 
+# for (gene in sampled_genes){
+#   iso_names = isoform_dict[[gene]]
+#   gene_counts = gene_longread[, gene]
+#   
+#   iso1_col = paste0(gene, "..", iso_names[1])
+#   iso2_col = paste0(gene, "..", iso_names[2])
+#   
+#   iso_sum = isoform_longread[, iso1_col] + isoform_longread[, iso2_col]
+#   
+#   # Table of gene-level counts
+#   cat(paste0("\n Gene: ", gene))
+#   cat("\nGene-level count table:\n")
+#   print(table(gene_counts))
+#   
+#   # Table of aggregated isoform counts
+#   cat("\nAggregated isoform count table:\n")
+#   print(table(iso_sum))
+# }
+```
+
+
+### Pre-step : Extracting gene names for each of Spatial, ISOG and ISO methods
+
+```{r}
+# Taking metafeatures of each SR, LR and isooform assay
+spatial_genes = isoform_spatial@assays$Spatial@meta.features
+isog_genes = isoform_spatial@assays$ISOG@meta.features
+iso_isoform = isoform_spatial@assays$ISO@meta.features
+
+# Filtering iso_genes to be gene name instead isoform
+iso_isoform_rep = as.matrix(iso_isoform)
+# Looking for just the gene names in the isoform level matrix
+rownames(iso_isoform_rep) = sub("\\..*$", "", rownames(iso_isoform_rep))
+iso_gene_list = unique(rownames(iso_isoform_rep))
+```
+
+
+## Step 2: Identify intersection of 2 gene sets ($C_{raw}$ and $R_{raw}$)
+```{r}
+# Calling the genes in reference tissue sample
+reference_genes = colnames(isoform_reference)
+
+# Find overlapping reference and SR spatial
+spatial_overlap = intersect(reference_genes, rownames(spatial_genes))
+
+# Find overlapping reference and LR gene
+isog_overlap = intersect(reference_genes, rownames(isog_genes))
+
+# Find overlapping reference and LR isoform
+## Separates into effectively a 10000 long list of list of 2 elements: gene and isoform
+## Structure: [[g1, g1i1], [g2, g2i1]]
+## Note that: Note that multiple lists may have the same gene (not grouped together yet)]
+## Output result: List of 11221 genes for 21013 isoforms 
+isoform_dict = list()
+rowname_sep = strsplit(rownames(iso_isoform), split = "\\.\\.")
+gene_names = c()
+isoform_names = c()
+isoform_overlap = c()
+
+'%notin%' <- function(x,y) !(x %in% y)
+
+for (i in 1:length(rowname_sep)) {
+  # Current gene name for this given isoform
+  curr_g = rowname_sep[[i]][1]
+  
+  # Pseudo-equivalent of intersect(reference, ST data) as above
+  if (curr_g %in% reference_genes) {
+    if (curr_g %notin% gene_names){
+      gene_names = c(gene_names, rowname_sep[[i]][1])
+    }
+    
+    # Isoform dictionary[[]] Creates dictionary of all isoforms possessed by this current gene
+    isoform_dict[[curr_g]] = c(isoform_dict[[curr_g]], rowname_sep[[i]][2])
+    
+    # List of all isoforms kept
+    isoform_overlap = c(isoform_overlap, rownames(iso_isoform)[i])
+  }
+  # List of all isoforms
+  isoform_names = c(isoform_names, rowname_sep[[i]][2])
+}
+```
+
+
+## Step 3: For output gene sets in step 2, further remove genes that have 0 counts in all pixels in $C_{raw}$ or 0 counts across all cells in $R_{raw}$.
+```{r}
+# Gene SR
+ST_expression_spatial <- colSums(as.matrix(gene_shortread[, spatial_overlap])) > 0
+SC_expression_spatial <- colSums(as.matrix(isoform_reference[, spatial_overlap])) > 0
+
+keep_genes = ST_expression_spatial & SC_expression_spatial
+spatial_overlap_positive = spatial_overlap[keep_genes]
+
+C_spatial = gene_shortread[, spatial_overlap_positive]
+# R_spatial = isoform_reference[, spatial_overlap_positive]
+
+
+# Gene LR
+ST_expression_isog <- colSums(as.matrix(gene_longread[, isog_overlap])) > 0
+SC_expression_isog <- colSums(as.matrix(isoform_reference[, isog_overlap])) > 0
+
+keep_genes = ST_expression_isog & SC_expression_isog
+isog_overlap_positive = isog_overlap[keep_genes]
+
+C_isog = gene_longread[, isog_overlap_positive]
+# R_isog = isoform_reference[, isog_overlap_positive]
+
+# Isoform LR
+ST_expression_iso <- colSums(as.matrix(isoform_longread[, isoform_overlap])) > 0
+
+# Compressing to gene level for SC
+SC_expression_gene = colSums(as.matrix(isoform_reference[, gene_names])) > 0
+parent_genes = sub("\\..*$", "", isoform_overlap)
+SC_expression_iso = SC_expression_gene[parent_genes]
+
+keep_genes = ST_expression_iso & SC_expression_iso
+isoform_overlap_positive = isoform_overlap[keep_genes]
+gene_overlap_positive = unique(sub("\\..*$", "", isoform_overlap_positive))
+
+C_iso = isoform_longread[, isoform_overlap_positive]
+# R_iso = isoform_reference[, gene_overlap_positive]
+
+
+##  Aggregating isoform -> gene level count data for restrictCorpus()
+C_iso_rep = as.matrix(C_iso)
+colnames(C_iso_rep) = sub("\\..*$", "", colnames(C_iso_rep))
+
+
+C_iso_agg = matrix(0, nrow = nrow(isoform_longread), ncol = length(gene_overlap_positive))
+rownames(C_iso_agg) = rownames(isoform_longread)
+colnames(C_iso_agg) = gene_overlap_positive
+
+for (gene in colnames(C_iso_rep)){
+  # Summing adding all the columns in df that has the same gene colname together
+  # Effectively adding vectors of dim 918 x 1 + 918 x 1 + ... -> Achieved via rowSum
+  C_iso_agg[, gene] = rowSums(C_iso_rep[ ,which(colnames(C_iso_rep) == gene), drop=F])
+}
+```
+Prepare to aggregate isoform counts data into gene counts data for variable gene selection.
+Note that although this may miss genes where gene expression is constant but isoform switching occurs, this is rarely the case and not considered for now
+
+## Step 4: For the output gene set in step 3, apply to Craw and perform variable gene selection. FlexiDeconv uses `restrictCorpus()` functions provided in STdeconvolve. We now have input ready C
+
+
+```{r}
+# Gene SR
+spatial_selection <- t(restrictCorpus(t(C_spatial), plot = TRUE))
+spatial_selected_genes = colnames(spatial_selection)
+
+C_spatial_selection = gene_shortread[, spatial_selected_genes]
+
+# Gene LR
+isog_selection <- t(restrictCorpus(t(C_isog), plot = TRUE))
+isog_selected_genes = colnames(isog_selection)
+
+C_isog_selection = gene_longread[, isog_selected_genes]
+
+
+# Isoform LR
+##  Now de-aggregating the selected genes in `iso_selection` back to their isoform count form.
+iso_selection <- t(restrictCorpus(t(C_iso_agg), plot = TRUE))
+
+iso_selected_genes = colnames(iso_selection)
+isoform_parent = sub("\\..*$", "", colnames(C_iso))
+iso_selected_isoforms = colnames(C_iso)[isoform_parent %in% iso_selected_genes]
+
+C_iso_selection = isoform_longread[, iso_selected_isoforms]
+```
+
+## Step 5: Modify $R_{raw}$ by removing cells with less than a total of 50 gene counts, also remove cell types (and all cells belonging to this cell type) having less than 25 cells. We denote the modified $R_{raw}$ as $R_{intermediate}$. These settings are referenced from RCTD’s software package.
+
+```{r}
+## Fix by putting filter after the gene
+threshold_gene_count = 50
+threshold_cell_count = 25
+
+# # Remove any cells that have less than threshold_gene_count
+# keep_cells = metadata$nUMI >= threshold_gene_count
+# metadata = metadata[keep_cells, ]
+# 
+# # Remove any cell types that have less than threshold_cell_count
+# celltype_count = table(metadata$ClusterName)
+# keep_celltypes = names(celltype_count[celltype_count >= threshold_cell_count])
+# metadata = metadata[metadata$ClusterName %in% keep_celltypes, ]
+
+## Now applying to all the R_{raw} counts
+# Gene SR
+R_spatial_raw = isoform_reference[, spatial_selected_genes]
+## Remove any cells that have less than threshold_gene_count
+read_depth = rowSums(as.matrix(R_spatial_raw))
+keep_cells = read_depth >= threshold_gene_count
+R_spatial_raw = R_spatial_raw[keep_cells, ]
+
+metadata_spatial <- metadata[metadata$X %in% rownames(R_spatial_raw), ]
+celltype_count = table(metadata_spatial$ClusterName)
+## Remove any cell types that have less than threshold_cell_count
+keep_celltypes = names(celltype_count[celltype_count >= threshold_cell_count])
+metadata_spatial = metadata_spatial[metadata_spatial$ClusterName %in% keep_celltypes, ]
+R_spatial_selection = R_spatial_raw[metadata_spatial$X, ]
+
+# Gene LR
+R_isog_raw = isoform_reference[, isog_selected_genes]
+## Remove any cells that have less than threshold_gene_count
+read_depth = rowSums(as.matrix(R_isog_raw))
+keep_cells = read_depth >= threshold_gene_count
+R_isog_raw = R_isog_raw[keep_cells, ]
+
+metadata_isog <- metadata[metadata$X %in% rownames(R_isog_raw), ]
+celltype_count = table(metadata_isog$ClusterName)
+## Remove any cell types that have less than threshold_cell_count
+keep_celltypes = names(celltype_count[celltype_count >= threshold_cell_count])
+metadata_isog = metadata_isog[metadata_isog$ClusterName %in% keep_celltypes, ]
+R_isog_selection = R_isog_raw[metadata_isog$X, ]
+
+# Isoform LR
+R_iso_raw = isoform_reference[, iso_selected_genes]
+## Remove any cells that have less than threshold_gene_count
+read_depth = rowSums(as.matrix(R_iso_raw))
+keep_cells = read_depth >= threshold_gene_count
+R_iso_raw = R_iso_raw[keep_cells, ]
+
+metadata_iso <- metadata[metadata$X %in% rownames(R_iso_raw), ]
+celltype_count = table(metadata_iso$ClusterName)
+## Remove any cell types that have less than threshold_cell_count
+keep_celltypes = names(celltype_count[celltype_count >= threshold_cell_count])
+metadata_iso = metadata_iso[metadata_iso$ClusterName %in% keep_celltypes, ]
+R_iso_selection = R_iso_raw[metadata_iso$X, ]
+```
+
+```{r}
+dim(R_spatial_selection)
+dim(R_isog_selection)
+dim(R_iso_selection)
+```
+
+
+
+# Final aggregation by cell type to obtain input ready reference $R$.
+
+Boxplot of the nUMI for each cell
+```{r}
+boxplot(metadata$nUMI, ylab = "Total gene count over cells", 
+        main = "Distribution of total gene count", horizontal = T)
+outliers <- boxplot.stats(metadata$nUMI)$out
+threshold_count = min(outliers)
+```
+```{r}
+
+# Gene SR
+reference_spatial = matrix(0, ncol = ncol(R_spatial_selection), nrow = length(unique(metadata$ClusterName)))
+rownames(reference_spatial) = sort(unique(metadata$ClusterName))
+colnames(reference_spatial) = colnames(R_spatial_selection)
+
+
+# Gene LR
+reference_isog = matrix(0, ncol = ncol(R_isog_selection), nrow = length(unique(metadata$ClusterName)))
+rownames(reference_isog) = sort(unique(metadata$ClusterName))
+colnames(reference_isog) = colnames(R_isog_selection)
+
+
+# Isoform LR
+reference_iso = matrix(0, ncol = ncol(R_iso_selection), nrow = length(unique(metadata$ClusterName)))
+rownames(reference_iso) = sort(unique(metadata$ClusterName))
+colnames(reference_iso) = colnames(R_iso_selection)
+```
+
+# Step 1-2: Sum the count for every gene across all selected cells, which results in a vector of gene expressions for the current cell type. Keeping only the cells within the box plot so as not to generate outliers
+```{r}
+# Gene SR
+for (i in 1:dim(metadata_spatial)[1]) {
+  nUMI = metadata_spatial$nUMI[i]
+  if (nUMI < threshold_count) {
+    # Calculates gene specific factor metadata_spatial nUMI normalised by raw counts matrix for that given gene
+    factor = nUMI/sum(R_spatial_selection[i, ])
+    celltype = metadata_spatial$ClusterName[i]
+    # Assign reference CT 1 gene values = factor_1 * R_spatial_selection[gene1, ] + factor_2 * R_spatial_selection[2, ] + ...
+    reference_spatial[celltype,] = reference_spatial[celltype,] + R_spatial_selection[i, ] * factor
+    # print(paste(sum(raw_counts[,i]*factor), nUMI))  
+  }
+}
+
+# Gene LR
+for (i in 1:dim(metadata_isog)[1]) {
+  nUMI = metadata_isog$nUMI[i]
+  if (nUMI < threshold_count) {
+    # Calculates gene specific factor metadata_isog nUMI normalised by raw counts matrix for that given gene
+    factor = nUMI/sum(R_isog_selection[i, ])
+    celltype = metadata_isog$ClusterName[i]
+    # Assign reference CT 1 gene values = factor_1 * R_isog_selection[gene1, ] + factor_2 * R_isog_selection[2, ] + ...
+    reference_isog[celltype,] = reference_isog[celltype,] + R_isog_selection[i, ] * factor
+    # print(paste(sum(raw_counts[,i]*factor), nUMI))  
+  }
+}
+
+# Isoform LR
+for (i in 1:dim(metadata_iso)[1]) {
+  nUMI = metadata_iso$nUMI[i]
+  if (nUMI < threshold_count) {
+    # Calculates gene specific factor metadata_iso nUMI normalised by raw counts matrix for that given gene
+    factor = nUMI/sum(R_iso_selection[i, ])
+    celltype = metadata_iso$ClusterName[i]
+    # Assign reference CT 1 gene values = factor_1 * R_iso_selection[gene1, ] + factor_2 * R_iso_selection[2, ] + ...
+    reference_iso[celltype,] = reference_iso[celltype,] + R_iso_selection[i, ] * factor
+    # print(paste(sum(raw_counts[,i]*factor), nUMI))  
+  }
+}
+```
+
+```{r}
+outlierCellRemoval = function(R_selection, metadata,
+                              lowerThresholdRank  = 2,
+                              lowerThresholdCount = 3,
+                              IQR_multiplier      = 1.5,
+                              plot                = TRUE,
+                              title_suffix        = "") {
+  
+  celltypes  = unique(metadata$ClusterName)
+  keep_cells = c()
+  plot_data  = data.frame()
+  
+  # Per-celltype summary for printing
+  summary_table = data.frame(
+    celltype       = character(),
+    n_total        = integer(),
+    n_kept         = integer(),
+    n_removed      = integer(),
+    upper_threshold = numeric()
+  )
+  
+  for (ct in celltypes) {
+    
+    # Cells belonging to this celltype
+    ct_idx   = which(metadata$ClusterName == ct)
+    ct_cells = metadata$X[ct_idx]
+    ct_nUMI  = metadata$nUMI[ct_idx]
+    
+    # ── Upper threshold: per-celltype IQR ──────────────────────────────────
+    Q3              = quantile(ct_nUMI, 0.75)
+    IQR_val         = IQR(ct_nUMI)
+    upper_threshold = Q3 + IQR_multiplier * IQR_val
+    pass_upper      = ct_nUMI <= upper_threshold
+    
+    # ── Lower threshold: rank-based count filter ───────────────────────────
+    ct_counts  = as.matrix(R_selection[ct_cells, , drop = FALSE])
+    pass_lower = apply(ct_counts, 1, function(cell_vec) {
+      sorted_counts = sort(cell_vec, decreasing = TRUE)
+      rank_val      = sorted_counts[min(lowerThresholdRank, length(sorted_counts))]
+      rank_val >= lowerThresholdCount
+    })
+    
+    pass_both  = pass_upper & pass_lower
+    keep_cells = c(keep_cells, ct_cells[pass_both])
+    
+    # ── Collect plot data ──────────────────────────────────────────────────
+    plot_data = rbind(plot_data, data.frame(
+      cell            = ct_cells,
+      nUMI            = ct_nUMI,
+      celltype        = ct,
+      kept            = pass_both,
+      upper_threshold = upper_threshold
+    ))
+    
+    # ── Per-celltype summary ───────────────────────────────────────────────
+    summary_table = rbind(summary_table, data.frame(
+      celltype        = ct,
+      n_total         = length(ct_cells),
+      n_kept          = sum(pass_both),
+      n_removed       = sum(!pass_both),
+      upper_threshold = round(upper_threshold, 2)
+    ))
+  }
+  
+  # ── Print summary table ────────────────────────────────────────────────
+  cat("\n── Outlier Cell Removal Summary", title_suffix, "──\n")
+  cat(sprintf("  lowerThresholdRank  = %d\n", lowerThresholdRank))
+  cat(sprintf("  lowerThresholdCount = %d\n", lowerThresholdCount))
+  cat(sprintf("  IQR multiplier      = %.1f\n", IQR_multiplier))
+  cat(sprintf("  Total cells before  = %d\n", nrow(metadata)))
+  cat(sprintf("  Total cells kept    = %d\n", length(keep_cells)))
+  cat(sprintf("  Total cells removed = %d\n", nrow(metadata) - length(keep_cells)))
+  cat("\nPer-celltype breakdown:\n")
+  print(summary_table, row.names = FALSE)
+  
+  # ── Raincloud plot ─────────────────────────────────────────────────────
+  if (plot) {
+    
+    # Threshold line data (one value per celltype)
+    threshold_data = plot_data %>%
+      dplyr::group_by(celltype) %>%
+      dplyr::summarise(upper_threshold = unique(upper_threshold),
+                       .groups = "drop")
+    
+    p = ggplot(plot_data, 
+               aes(x = celltype, y = nUMI, fill = celltype)) +
+      
+      # Half-violin (density cloud)
+      ggdist::stat_halfeye(
+        adjust       = 0.5,
+        width        = 0.6,
+        .width       = 0,
+        justification = -0.2,
+        point_colour = NA,
+        alpha        = 0.7
+      ) +
+      
+      # Boxplot
+      geom_boxplot(
+        width         = 0.15,
+        outlier.shape = NA,
+        colour        = "black",
+        fill          = "white",
+        alpha         = 0.8
+      ) +
+      
+      # Jittered points coloured by kept/removed status
+      geom_jitter(
+        aes(colour = kept),
+        width = 0.05,
+        size  = 0.6,
+        alpha = 0.5
+      ) +
+      
+      # Per-celltype upper threshold line
+      geom_crossbar(
+        data    = threshold_data,
+        aes(x = celltype,
+            y    = upper_threshold,
+            ymin = upper_threshold,
+            ymax = upper_threshold),
+        colour    = "red",
+        width     = 0.4,
+        linewidth = 0.5,
+        inherit.aes = FALSE
+      ) +
+      
+      scale_colour_manual(
+        values = c("TRUE"  = "#2196F3",
+                   "FALSE" = "#F44336"),
+        labels = c("TRUE"  = "Kept",
+                   "FALSE" = "Removed"),
+        name   = "Status"
+      ) +
+      
+      coord_flip() +
+      
+      labs(
+        title    = paste("Cell nUMI distribution by celltype", title_suffix),
+        subtitle = paste0("Red line = Q3 + ", IQR_multiplier,
+                          "×IQR  |  Blue = kept, Red points = removed"),
+        x = "Cell Type",
+        y = "nUMI (total gene count)"
+      ) +
+      
+      theme_bw(base_size = 11) +
+      theme(
+        legend.position  = "bottom",
+        axis.text.y      = element_text(size = 8),
+        plot.title       = element_text(face = "bold"),
+        plot.subtitle    = element_text(size = 9, colour = "grey40")
+      ) +
+      
+      guides(fill = "none")  # suppress redundant fill legend
+    
+    print(p)
+  }
+  
+  return(keep_cells)
+}
+
+# Gene SR
+keep_spatial     = outlierCellRemoval(R_spatial_selection, metadata_spatial,
+                                      title_suffix = "(Gene SR)")
+R_spatial_selection = R_spatial_selection[keep_spatial, ]
+metadata_spatial    = metadata_spatial[metadata_spatial$X %in% keep_spatial, ]
+
+# Gene LR
+keep_isog        = outlierCellRemoval(R_isog_selection, metadata_isog,
+                                      title_suffix = "(Gene LR)")
+R_isog_selection = R_isog_selection[keep_isog, ]
+metadata_isog    = metadata_isog[metadata_isog$X %in% keep_isog, ]
+
+# Isoform LR
+keep_iso         = outlierCellRemoval(R_iso_selection, metadata_iso,
+                                      title_suffix = "(Isoform LR)")
+R_iso_selection  = R_iso_selection[keep_iso, ]
+metadata_iso     = metadata_iso[metadata_iso$X %in% keep_iso, ]
+```
+
+
+# Step 3: Normalize this vector so that the sum is 1. Completing this step yields a single row in the input-ready reference R.
+
+```{r}
+# Removing Cell Types with 0 rowSums in references
+reference_spatial = reference_spatial[names(which(rowSums(reference_spatial) > 0)),]
+reference_isog = reference_isog[names(which(rowSums(reference_isog) > 0)),]
+reference_iso = reference_iso[names(which(rowSums(reference_iso) > 0)),]
+
+laplace_smooth = function(ref_matrix, epsilon = 1) {
+  smoothed = ref_matrix + epsilon
+  return(smoothed)
+}
+
+reference_spatial = laplace_smooth(reference_spatial)
+reference_isog    = laplace_smooth(reference_isog)
+reference_iso     = laplace_smooth(reference_iso)
+
+# Normalise each matrix to have rowSum = 1
+reference_spatial = reference_spatial / rowSums(reference_spatial)
+reference_isog = reference_isog / rowSums(reference_isog)
+reference_iso = reference_iso / rowSums(reference_iso)
+
+# Sanity checks
+cat("Spatial ref  — min:", min(reference_spatial),
+                  "zeros:", sum(reference_spatial == 0), "\n")
+cat("Isog ref     — min:", min(reference_isog),
+                  "zeros:", sum(reference_isog == 0), "\n")
+cat("Iso ref      — min:", min(reference_iso),
+                  "zeros:", sum(reference_iso == 0), "\n")
+```
+
+Filtering isoform_dict to keep only the significant isoforms
+
+```{r}
+kept_isoform = colnames(C_iso_selection)
+
+isoform_dict_filtered = list()
+for (isoform_fullname in kept_isoform){
+  parts = strsplit(isoform_fullname, split = "\\.\\.")[[1]]
+  gene = parts[1]
+  iso = parts[2]
+  
+  isoform_dict_filtered[[gene]] = c(isoform_dict_filtered[[gene]], iso)
+}
+  
+  
+```
+
+
+# Creating prior constant weight $b_k$
+```{r}
+pw_constant = 0.1
+
+pw_spatial = rep(pw_constant, dim(reference_spatial)[1])
+pw_isog = rep(pw_constant, dim(reference_isog)[1])
+pw_iso = rep(pw_constant, dim(reference_iso)[1])
+
+saveRDS(pw_spatial, "/data/gpfs/projects/punim0614/ashtonl/FlexiDeconv/Isoform_Work/Data/Isoform/LebrigandIsoform/proc_data_pipeline/gene_SR_pw.rds")
+saveRDS(pw_isog, "/data/gpfs/projects/punim0614/ashtonl/FlexiDeconv/Isoform_Work/Data/Isoform/LebrigandIsoform/proc_data_pipeline/gene_LR_pw.rds")
+saveRDS(pw_iso, "/data/gpfs/projects/punim0614/ashtonl/FlexiDeconv/Isoform_Work/Data/Isoform/LebrigandIsoform/proc_data_pipeline/iso_LR_pw.rds")
+```
+
+# Save all C and R matrices now as processed data
+```{r}
+# Gene SR
+saveRDS(C_spatial_selection, "/data/gpfs/projects/punim0614/ashtonl/FlexiDeconv/Isoform_Work/Data/Isoform/LebrigandIsoform/proc_data_pipeline/gene_SR_spatial.rds")
+saveRDS(reference_spatial, "/data/gpfs/projects/punim0614/ashtonl/FlexiDeconv/Isoform_Work/Data/Isoform/LebrigandIsoform/proc_data_pipeline/gene_SR_ref.rds")
+
+
+# Gene LR
+saveRDS(C_isog_selection, "/data/gpfs/projects/punim0614/ashtonl/FlexiDeconv/Isoform_Work/Data/Isoform/LebrigandIsoform/proc_data_pipeline/gene_LR_spatial.rds")
+saveRDS(reference_isog, "/data/gpfs/projects/punim0614/ashtonl/FlexiDeconv/Isoform_Work/Data/Isoform/LebrigandIsoform/proc_data_pipeline/gene_LR_ref.rds")
+
+
+# Isoform LR
+saveRDS(C_iso_selection, "/data/gpfs/projects/punim0614/ashtonl/FlexiDeconv/Isoform_Work/Data/Isoform/LebrigandIsoform/proc_data_pipeline/iso_LR_spatial.rds")
+saveRDS(reference_iso, "/data/gpfs/projects/punim0614/ashtonl/FlexiDeconv/Isoform_Work/Data/Isoform/LebrigandIsoform/proc_data_pipeline/iso_LR_ref.rds")
+saveRDS(isoform_dict_filtered, "/data/gpfs/projects/punim0614/ashtonl/FlexiDeconv/Isoform_Work/Data/Isoform/LebrigandIsoform/proc_data_pipeline/iso_LR_dict.rds")
+```
+

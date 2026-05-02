@@ -1,0 +1,158 @@
+---
+title: "RCTD_Visium_Analysis"
+output: html_document
+date: "2026-04-12"
+---
+
+```{r}
+library(data.table)
+library(Matrix)
+library(spacexr)
+library(Seurat)
+library(nanoparquet)
+library(ggplot2)
+library(dplyr)
+source("/data/gpfs/projects/punim0614/ashtonl/FlexiDeconv/Visium_HD/functions(new).R")
+```
+
+
+```{r}
+REF_DIR <- "/data/gpfs/projects/punim0614/ashtonl/FlexiDeconv/Visium_HD/Data/Joglekar_Reference"
+BASE    <- "/data/gpfs/projects/punim0614/ashtonl/FlexiDeconv/Visium_HD/Data"
+SR_DIR  <- file.path(BASE, "Visium_Data/spaceranger")
+v2_8um_dir <- file.path(SR_DIR, "binned_outputs/square_008um")
+
+
+reference <- readRDS(file.path(REF_DIR, "spacexr_reference_all.rds"))
+annot = read.csv("/data/gpfs/projects/punim0614/ashtonl/FlexiDeconv/Visium_HD/Data/Joglekar_Reference/RCTD_annotations_all.csv")
+counts = Read10X(file.path(v2_8um_dir, "filtered_feature_bc_matrix"))
+
+unique(annot$first_type)
+```
+
+
+
+```{r}
+unique(annot$first_type)
+```
+
+
+```{r}
+cell_colours <- c(
+  "ExciteNeuron" = "#1F77B4",  # blue
+  "InhibNeuron"  = "#FF7F0E",  # orange (already correct)
+  "Oligo"        = "#2CA02C",  # green (already correct)
+  "Astro"        = "#D62728",  # red (already correct)
+  "Vasc"         = "#9467BD",  # purple (already correct)
+  "Progenitor"   = "#8C564B",  # brown
+  "Immune"       = "#F7B6D2",  # light pink (Microglia)
+  "Cholinergic"  = "#7F7F7F",  # grey
+  "MSN"          = "#BCBD22"   # yellow-green (Medium Spiny Neurons)
+)
+```
+
+Singlets plots:
+```{r}
+singlets = annot %>% filter(spot_class == "singlet")
+type_counts = singlets %>% count(first_type, sort = TRUE)
+
+bg <- annot %>% select(x, y)
+
+ggplot() +
+  geom_point(data = bg, aes(x = y, y = -x),
+             colour = "grey90", size = 0.05, shape = 16) +
+  geom_point(data = singlets, aes(x = y, y = -x, colour = first_type),
+             size = 0.1, shape = 16) +
+  scale_colour_manual(values = cell_colours, drop = TRUE) +
+  facet_wrap(~ first_type, ncol = 3) +
+  coord_equal() +
+  theme_void() +
+  theme(
+    strip.text      = element_text(size = 10, face = "bold"),
+    legend.position = "none",
+    plot.title      = element_text(size = 14, face = "bold", hjust = 0.5)
+  ) +
+  ggtitle("RCTD Singlet Cell-Type Annotations — V2 (8 µm bins)")
+```
+Plotting by cell_type class:
+```{r}
+class_pct <- annot %>%
+  count(spot_class) %>%
+  mutate(pct   = round(100 * n / sum(n), 1),
+         label = paste0(spot_class, " (", pct, "%)"))
+
+annot2 <- annot %>%
+  left_join(class_pct %>% select(spot_class, label), by = "spot_class")
+
+level_order <- c("singlet", "doublet_certain", "doublet_uncertain", "reject")
+extra <- setdiff(unique(annot2$spot_class), level_order)
+level_order <- c(level_order, extra)
+
+annot2$spot_class <- factor(annot2$spot_class, levels = level_order)
+annot2$label      <- factor(annot2$label,
+                         levels = class_pct$label[match(level_order, class_pct$spot_class)])
+
+ggplot(annot2, aes(x = y, y = -x)) +
+  geom_point(colour = "#3182BD", size = 0.02, shape = 16, alpha = 0.5) +
+  facet_wrap(~ label, ncol = 3) +
+  coord_equal() +
+  theme_void() +
+  theme(
+    strip.text = element_text(size = 10, face = "bold"),
+    plot.title = element_text(size = 14, face = "bold", hjust = 0.5)
+  ) +
+  ggtitle("RCTD Classification Categories — V2 (8 µm bins)")
+```
+
+# Sanity Check Plots:
+```{r}
+shared = intersect(singlets$barcode, colnames(counts))
+singlets = singlets[match(shared, singlets$barcode), ]
+counts_s = counts[, shared, drop = FALSE]
+labels = setNames(singlets$first_type, singlets$barcode)
+
+# Pseudobulk: Sum Raw counts per cell type:
+cell_types = sort(unique(labels))
+gt_ref_raw <- sapply(cell_types, function(ct) {
+  bc_ct <- names(labels)[labels == ct]
+  Matrix::rowSums(counts_s[, bc_ct, drop = FALSE])   # G-vector, fast
+})
+
+# gt_ref_raw is now G × K — small dense matrix
+rownames(gt_ref_raw) <- rownames(counts_s)
+colnames(gt_ref_raw) <- cell_types
+
+# ── Normalise pseudobulk to CP10k, then log ──
+ct_size_factors <- colSums(gt_ref_raw) / 1e4
+gt_ref_norm     <- sweep(gt_ref_raw, 2, ct_size_factors, "/")
+gt_ref_log      <- log1p(gt_ref_norm)
+
+# ── Transpose to K × G for cor_matrix_plot_gt ──
+gt_ref <- t(gt_ref_log)
+
+cor_matrix_plot_gt(
+  gt_ref     = gt_ref,
+  title      = "Pearson correlation: RCTD first_type singlets (log-normalised pseudobulk)",
+  type       = "pearson",
+  axis_label = "RCTD cell types"
+)
+```
+
+
+```{r}
+gene_var = apply(gt_ref, 2, var)
+gene_var = sort(gene_var, decreasing = TRUE)
+cum_share <- cumsum(gene_var) / sum(gene_var)
+
+cat("Top 10 genes:   ", round(cum_share[10],   3), "of variance\n")
+cat("Top 50 genes:   ", round(cum_share[50],   3), "\n")
+cat("Top 200 genes:  ", round(cum_share[200],  3), "\n")
+cat("Top 1000 genes: ", round(cum_share[1000], 3), "\n")
+
+cor_mat <- cor(t(gt_ref), method = "pearson")
+round(cor_mat, 2)
+```
+
+
+
+

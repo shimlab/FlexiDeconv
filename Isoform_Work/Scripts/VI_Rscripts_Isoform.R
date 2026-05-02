@@ -119,7 +119,7 @@ t7 <- function(ct.count, tau.p) {
   # E[log q(beta)]
   val <- 0
   for (i in 1:ct.count) {
-    val <- lgamma(sum(tau.p[i,])) - sum(lgamma(tau.p[i,]))
+    val <- val + lgamma(sum(tau.p[i,])) - sum(lgamma(tau.p[i,]))
     tau.vec1 <- tau.p[i,] - 1
     tau.vec2 <- digamma(tau.p[i,]) - digamma(sum(tau.p[i,]))
     val <- val + tau.vec1 %*% tau.vec2
@@ -165,7 +165,7 @@ t8 <- function(pixel.count, f.p, phi.p, count.data,ct.count) {
 # t4_test(num_gene, num_pixel, num_celltype, phi.vi, tau.vi, spatial, isoform_dict)
 
 # this should be the new f.update
-log.count = log(spatial)
+"log.count = log(spatial)
 new.log.phi = log.phi.vi
 for (i in 1:34) {
   new.log.phi[,,i] = log.phi.vi[,,i] + as.matrix(log.count)
@@ -193,9 +193,9 @@ for (i in 1:1000) {
   }
   curr_at = curr_at + num_isoform
 }
-f_normalized = new_f_unnormalized - second_factor
-#######
-
+f_normalized = new_f_unnormalized - second_factor"
+####### The original version
+"
 f.update <- function(ct.count, isoform.dict, gene.count,
                      phi.p, count.data) {
   # Better version
@@ -207,7 +207,81 @@ f.update <- function(ct.count, isoform.dict, gene.count,
   curr_at = 1
   for (i in 1:gene.count) {
     num_isoform = length(isoform.dict[[i]])
+    
+    # Handling zero denominators
+    
+    
     new.f[,curr_at:(curr_at+num_isoform-1)] = new.f[,curr_at:(curr_at+num_isoform-1)]/rowSums(new.f[,curr_at:(curr_at+num_isoform-1),drop=F])
+    curr_at = curr_at + num_isoform
+  }
+  new.f
+}"
+
+
+######### New version (accounting for division by 0 issue, non-logsumtrick)
+"f.update <- function(ct.count, isoform.dict, gene_count,
+                     phi.p, count.data) {
+  new.phi = phi.p
+  for (i in 1:ct.count) {
+    new.phi[,,i] = as.matrix(phi.p[,,i] * count.data)
+  }
+  new.f = t(apply(new.phi, MARGIN = c(2, 3), sum))
+  
+
+  curr_at <- 1
+  for (n in 1:gene.count) {
+    num_isoform <- length(isoform.dict[[n]])
+    isoform_cols <- curr_at:(curr_at + num_isoform - 1)
+    row_sums = rowSums(new.f[, isoform_cols, drop = FALSE])
+    
+    zero_rows <- (row_sums == 0)
+    # Handling zero denominator case: Set to uniform distribution
+    if (any(zero_rows)){
+      new.f[zero_rows, isoform_cols] = 1 / num_isoform
+    }
+    
+    # Normalise non-zero rows
+    if (any(!zero_rows)) {
+      new.f[!zero_rows, isoform_cols] = new.f[!zero_rows, isoform_cols] / row_sums[!zero_rows]
+    }
+    
+    curr_at = curr_at + num_isoform
+  }
+  
+}"
+
+####### New version (Log-sum trick)
+f.update <- function(ct.count, isoform.dict, gene.count,
+                     phi.p, count.data) {
+  new.phi = phi.p
+  for (i in 1:ct.count) {
+    new.phi[,,i] = as.matrix(phi.p[,,i] * count.data)
+  }
+  new.f = t(apply(new.phi, MARGIN = c(2, 3), sum))
+  
+  
+  curr_at <- 1
+  for (n in 1:gene.count) {
+    num_isoform <- length(isoform.dict[[n]])
+    isoform.cols <- curr_at:(curr_at + num_isoform - 1)
+    
+    
+    gene.counts <- new.f[, isoform.cols, drop = FALSE]
+    
+    log.gene.counts = log(gene.counts)
+    
+    # Normalize each row using logsumexp
+    for (k in 1:ct.count){
+      log.vals = log.gene.counts[k, ]
+      
+      if (all(!is.finite(log.vals))){
+        new.f[k, isoform.cols] = 1 / num_isoform
+      } else {
+        log.normalizer = logsumexp(log.vals)
+        new.f[k, isoform.cols] = exp(log.vals - log.normalizer) 
+      }
+    }
+    
     curr_at = curr_at + num_isoform
   }
   new.f
@@ -220,6 +294,7 @@ phi.update <- function(pixel.count, ct.count, gene.count, gamma.p, tau.p, isofor
                        transcript.count) {
   # Better version
   new.phi <- array(0, dim = c(pixel.count, transcript.count, ct.count))
+  log.new.phi <- array(0, dim = c(pixel.count, transcript.count, ct.count))
   
   intermediate.new.phi = array(0, dim = c(pixel.count, gene.count, ct.count))
   
@@ -237,24 +312,39 @@ phi.update <- function(pixel.count, ct.count, gene.count, gamma.p, tau.p, isofor
     gamma.vec <- new.gamma[i,]
     gamma.matrix <- matrix(rep(gamma.vec, each = gene.count), nrow=gene.count)
     tau.matrix <- t(new.tau)
-    intermediate.new.phi[i,,] <- as.matrix(exp(gamma.matrix + tau.matrix))
+    
+    # Attempted implementation of logsumexp trick
+    intermediate.new.phi[i,,] = as.matrix(gamma.matrix + tau.matrix)
+    
+    # Removing the exponential step that could result in underflow/overflow
+    # intermediate.new.phi[i,,] <- as.matrix(exp(gamma.matrix + tau.matrix))
     #intermediate.new.phi[i,,] <- intermediate.new.phi[i,,]/rowSums(intermediate.new.phi[i,,])
     #new.phi[i,,] <- new.phi[i,,]/rowSums(new.phi[i,,])
   }
+  
   curr_at = 1
   for (i in 1:gene.count) {
     num_isoform = length(isoform.dict[[i]])
     temp = array(rep(intermediate.new.phi[,i,], each = num_isoform), dim = c(num_isoform, pixel.count, ct.count))
-    new.phi[,curr_at:(curr_at+num_isoform-1),] = aperm(temp, c(2, 1, 3))
+    log.new.phi[,curr_at:(curr_at+num_isoform-1),] = aperm(temp, c(2, 1, 3))
     #curr_isoform_matrix = t(f.p[,curr_at:(curr_at+num_isoform-1)])
     #temp2 = array(rep(t(curr_isoform_matrix,each=pixel.count)), dim = c(pixel.count, num_isoform, ct.count))
     #new.phi[,curr_at:(curr_at+num_isoform-1),] = new.phi[,curr_at:(curr_at+num_isoform-1),] * curr_isoform_matrix
     curr_at = curr_at + num_isoform
   }
   
+  log.f.p = log(t(f.p))
+  log.f.p[!is.finite(log.f.p)] = -1e10
+  
   for (i in 1:pixel.count) {
-    new.phi[i,,] <- new.phi[i,,] * t(f.p)
-    new.phi[i,,] <- new.phi[i,,]/rowSums(new.phi[i,,])
+    log.phi.weighted = log.new.phi[i,,] + log.f.p # Calculating new.phi[i,, ]
+    log.normalizers = logsumexp.rows(log.phi.weighted) # Equivalent to rowSums(new.phi[...]) in original implementation
+    
+    log.phi.normalized = log.phi.weighted - log.normalizers # Log space form of new.phi[i,,]/rowSums(new.phi[i,,])
+    new.phi[i,,] = exp(log.phi.normalized)
+    
+    # new.phi[i,,] <- new.phi[i,,] * t(f.p)
+    # new.phi[i,,] <- new.phi[i,,]/rowSums(new.phi[i,,])
   }
   new.phi
 }
@@ -262,7 +352,7 @@ phi.update <- function(pixel.count, ct.count, gene.count, gamma.p, tau.p, isofor
 
 
 gamma.update <- function(pixel.count, ct.count, alpha.p, phi.p,
-                         count.data) {
+                         count.data, gene.count) {
   new.gamma <- matrix(rep(alpha.p, each = pixel.count), nrow = pixel.count, 
                       byrow=TRUE)
   for (i in 1:ct.count) {
@@ -332,14 +422,45 @@ alpha.step <- function(pixel.count, ct.count, alpha.p, gamma.p) {
 
 
 
-
-logsum <- function(v) {
-  # import v is a vector where each entry is of form log(p_i)
-  # goal is to compute (log(exp(v1) + ... + exp(vN)))
-  c = max(v)
-  u = exp(v - c)
-  return(log(sum(u)) + c)
+# @param: Numeric vector of log-space values (input x_i = log(p_i))
+# @return: Scalar: log(sum(exp(x)))
+# Inspired off implementation: https://gregorygundersen.com/blog/2020/02/09/log-sum-exp/
+logsumexp <- function(x) {
+  # Handling edge cases
+  x = x[is.finite(x)]
+  if (length(x) == 0) return(-Inf)
+  if (length(x) == 1) return(x)
+  
+  x_max = max(x)
+  x_max + log(sum(exp(x - x_max)))
 }
+
+
+# @param: Numeric matrix X with dimensions (n x m)
+# @return: Numeric vector of length n, where result[i] = logsumexp(X[i, ])
+logsumexp.rows <- function(X){
+  if (!is.matrix(X)){
+    stop("Input should be a matrix")
+  }
+  
+  x_max = apply(X, 1, max)
+  x_shifted = sweep(X, 1, x_max, "-")
+  x_max + log(rowSums(exp(x_shifted)))
+}
+
+
+# @param: Numeric matrix X with dimensions (n x m)
+# @return: Numeric vector of length m, where result[j] = logsumexp(X[, j])
+logsumexp.cols <- function(X){
+  if (!is.matrix(X)){
+    stop("Input should be a matrix")
+  }
+  
+  x_max = apply(X, 2, max)
+  x_shifted = sweep(X, 2, x_max, "-")
+  x_max + log(colSums(exp(x_shifted)))
+}
+
 
 
 

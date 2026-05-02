@@ -1,0 +1,257 @@
+---
+title: "Data Exploration"
+output: pdf_document
+date: "2026-03-31"
+---
+
+```{r}
+library(Seurat)
+library(ggplot2)
+library(patchwork)
+library(hdf5r)
+library(nanoparquet)
+library(jsonlite)
+```
+
+
+# Metadata files
+```{r}
+# region_of_interest = read.csv("/data/gpfs/projects/punim0614/ashtonl/FlexiDeconv/Visium_HD/Data/ABC_Reference/metadata/region_of_interest_metadata.csv")
+# 
+# genes = read.csv("/data/gpfs/projects/punim0614/ashtonl/FlexiDeconv/Visium_HD/Data/ABC_Reference/metadata/gene.csv")
+# 
+# cell_metadata = read.csv("/data/gpfs/projects/punim0614/ashtonl/FlexiDeconv/Visium_HD/Data/ABC_Reference/metadata/views/cell_metadata_with_cluster_annotation.csv")
+```
+Reducing size of cell metadata
+```{r}
+# cell_metadata_with_colour = cell_metadata[, !colnames(cell_metadata) %in% c("library_label", "feature_matrix_label", "entity", "brain_section_label", "library_method", "dataset_label", "x", "y", "region_of_interest_order")]
+# 
+# cell_metadata = cell_metadata_with_colour[, !colnames(cell_metadata) %in% c("neurotransmitter_color", "class_color", "subclass_color", "supertype_color", "cluster_color", "region_of_interest_color")]
+# 
+# write.csv(cell_metadata, file = "/data/gpfs/projects/punim0614/ashtonl/FlexiDeconv/Visium_HD/Data/ABC_Reference/cell_metadata.csv", row.names = F)
+```
+# MapMyCells files
+```{r}
+abc_reference_metadata = read.csv("/data/gpfs/projects/punim0614/ashtonl/FlexiDeconv/Visium_HD/Data/ABC_Reference/cell_metadata.csv")
+```
+
+# Visium HD Visualiations
+```{r}
+counts = Read10X(data.dir = "/data/gpfs/projects/punim0614/ashtonl/FlexiDeconv/Visium_HD/Data/Visium_Data/spaceranger/binned_outputs/square_008um/filtered_feature_bc_matrix")
+positions = read_parquet("/data/gpfs/projects/punim0614/ashtonl/FlexiDeconv/Visium_HD/Data/Visium_Data/spaceranger/binned_outputs/square_008um/spatial/tissue_positions.parquet")
+scale_factors = fromJSON("/data/gpfs/projects/punim0614/ashtonl/FlexiDeconv/Visium_HD/Data/Visium_Data/spaceranger/binned_outputs/square_008um/spatial/scalefactors_json.json")
+```
+
+```{r}
+positions = positions[positions$in_tissue == 1, ]
+shared_barcodes = intersect(colnames(counts), positions$barcode)
+counts = counts[, shared_barcodes]
+positions = positions[match(shared_barcodes, positions$barcode), ]
+
+nUMI = colSums(counts)
+plot_df = data.frame(
+  x = positions$pxl_col_in_fullres,
+  y = positions$pxl_row_in_fullres,
+  nUMI = nUMI
+)
+ggplot(plot_df, aes(x = x, y = y, colour = log10(nUMI + 1))) + geom_point(size = 0.1)+ scale_colour_viridis_c() +
+  coord_fixed() +
+  theme_minimal() +
+  labs(
+    title = "Visium HD 8µm bins — log10(nUMI)",
+    colour = "log10(nUMI + 1)"
+  )
+```
+
+# QC in preparation for Loading
+```{r}
+# Counts per-bin
+qc =  data.frame(
+    barcode         = colnames(counts),
+    total_counts    = Matrix::colSums(counts),
+    n_genes         = Matrix::colSums(counts > 0),
+    row.names       = colnames(counts)
+)
+
+# Counts per-gene
+gene_qc <- data.frame(
+    gene            = rownames(counts),
+    total_counts    = Matrix::rowSums(counts),
+    n_bins          = Matrix::rowSums(counts > 0),
+    row.names       = rownames(counts)
+)
+
+qc = merge(qc, positions, by = "barcode", all.x = TRUE)
+rownames(qc) = qc$Row.names
+head(qc)
+```
+Metric 1: Total UMI count per bin
+```{r}
+median(qc$total_counts)
+boxplot(qc$total_counts, horizontal = TRUE)
+summary(qc$total_counts)
+```
+
+
+```{r}
+# Plot 1: Raw UMI counts
+p1_raw <- ggplot(qc, aes(x = total_counts)) +
+    geom_histogram(bins = 100, fill = "steelblue", colour = "white") +
+    labs(
+        title = "Total UMI counts per 8µm bin",
+        subtitle = "Raw scale",
+        x = "UMI count",
+        y = "Number of bins"
+    ) +
+    theme_classic()
+
+# Plot 2: log10(UMI + 1) transformed
+p1_log <- ggplot(qc, aes(x = log10(total_counts + 1))) +
+    geom_histogram(bins = 100, fill = "steelblue", colour = "white") +
+    labs(
+        title = "Total UMI counts per 8µm bin",
+        subtitle = "log10(UMI + 1) scale",
+        x = "log10(UMI + 1)",
+        y = "Number of bins"
+    ) +
+    theme_classic()
+
+# Display side by side
+p1_raw | p1_log
+```
+Metric 2: Number of Genes detected per bin:
+```{r}
+p2 <- ggplot(qc, aes(x = n_genes)) +
+    geom_histogram(bins = 100, fill = "darkorange", colour = "white") +
+    geom_vline(xintercept = 50, colour = "red", linetype = "dashed") +
+    labs(
+        title = "Genes detected per 8µm bin",
+        x = "Number of genes detected",
+        y = "Number of bins"
+    ) +
+    theme_classic()
+p2
+
+set.seed(1)
+qc_sample <- qc[sample(nrow(qc), min(50000, nrow(qc))), ]
+
+p3_heatmap <- ggplot(qc_sample, aes(x = log10(total_counts + 1), y = n_genes)) +
+    geom_bin2d(bins = 80) +
+    scale_fill_viridis_c(
+        option = "magma",
+        trans  = "log10",
+        name   = "log10(bins)"
+    ) +
+    geom_smooth(
+        method    = "loess",
+        colour    = "cyan",
+        linewidth = 0.8,
+        se        = FALSE       # drop confidence ribbon to speed rendering
+    ) +
+    labs(
+        title    = "UMI counts vs. genes detected per 8µm bin",
+        subtitle = paste0("Downsampled to ", nrow(qc_sample), " bins for visualisation"),
+        x        = "log10(UMI + 1)",
+        y        = "Genes detected"
+    ) +
+    theme_classic() +
+    theme(legend.position = "right")
+
+p3_heatmap
+```
+Metric 3: Spatial Distribution of QC Metrics
+```{r}
+# Spatial UMI plot
+p6_spatial_umi <- ggplot(qc, aes(
+        x      = pxl_col_in_fullres,
+        y      = -pxl_row_in_fullres,
+        colour = log10(total_counts + 1)
+    )) +
+    geom_point(size = 0.05) +
+    scale_colour_viridis_c(
+        option = "magma",
+        name   = "log10(UMI+1)"
+    ) +
+    labs(
+        title = "Spatial distribution of UMI counts",
+        x     = NULL,
+        y     = NULL
+    ) +
+    coord_fixed() +
+    theme_void() +
+    theme(legend.position = "right")
+
+# Spatial genes detected plot
+p7_spatial_genes <- ggplot(qc, aes(
+        x      = pxl_col_in_fullres,
+        y      = -pxl_row_in_fullres,
+        colour = n_genes
+    )) +
+    geom_point(size = 0.05) +
+    scale_colour_viridis_c(
+        option = "inferno",
+        name   = "Genes detected"
+    ) +
+    labs(
+        title = "Spatial distribution of genes detected",
+        x     = NULL,
+        y     = NULL
+    ) +
+    coord_fixed() +
+    theme_void() +
+    theme(legend.position = "right")
+
+p6_spatial_umi | p7_spatial_genes
+```
+```{r}
+boxplot(qc$n_genes, horizontal = TRUE)
+summary(qc$n_genes)
+boxplot(qc$total_counts, horizontal = TRUE)
+summary(qc$total_counts)
+```
+
+
+Metric 4: Spatial Distribution of Bins Passing candidate thresholds:
+```{r}
+# Apply candidate thresholds
+min_counts <- 75
+min_genes  <- 50
+
+qc$passes_qc <- qc$total_counts >= min_counts & qc$n_genes >= min_genes
+
+p8_spatial_qc <- ggplot(qc, aes(
+        x      = pxl_col_in_fullres,
+        y      = -pxl_row_in_fullres,
+        colour = passes_qc
+    )) +
+    geom_point(size = 0.05) +
+    scale_colour_manual(
+        values = c("TRUE" = "grey70", "FALSE" = "red"),
+        name   = "Passes QC",
+        labels = c("TRUE" = "Pass", "FALSE" = "Fail")
+    ) +
+    labs(
+        title    = "Bins passing QC thresholds",
+        subtitle = paste0(
+            "min UMI = ", min_counts,
+            ", min genes = ", min_genes,
+            " | Passing: ",
+            round(mean(qc$passes_qc) * 100, 1), "%"
+        ),
+        x = NULL,
+        y = NULL
+    ) +
+    coord_fixed() +
+    theme_void() +
+    theme(legend.position = "right")
+
+p8_spatial_qc
+```
+
+# Mapping from MapMyCells
+```{r}
+
+```
+
+
+

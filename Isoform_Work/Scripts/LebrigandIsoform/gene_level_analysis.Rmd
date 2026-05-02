@@ -1,0 +1,348 @@
+---
+title: "gene_level_analysis"
+output: html_document
+date: "2025-07-26"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Import libraries and files
+
+```{r}
+source("../functions(new).R")
+
+# gene_sr_res1 = readRDS("../../Data/Isoform/LebrigandIsoform/results/gene_SR_t1.rds")
+# gene_sr_res2 = readRDS("../../Data/Isoform/LebrigandIsoform/results/gene_SR_t2.rds")
+# gene_sr_res3 = readRDS("../../Data/Isoform/LebrigandIsoform/results/gene_SR_t3.rds")
+# gene_sr_res4 = readRDS("../../Data/Isoform/LebrigandIsoform/results/gene_SR_t4.rds")
+# gene_sr_res5 = readRDS("../../Data/Isoform/LebrigandIsoform/results/gene_SR_t5.rds")
+
+gene_sr = readRDS("/data/gpfs/projects/punim0614/ashtonl/FlexiDeconv/Isoform_Work/Outputs/report_results/pw_1.0/gene_SR_pw_1.0_t1.rds")
+
+# gene_sr_pw = readRDS("../../Data/Isoform/LebrigandIsoform/proc_data/gene_SR_pw.rds")
+
+metadata = readRDS("../../Data/Isoform/LebrigandIsoform/mob_metadata.rds")
+```
+
+Cell Type importance
+
+Comparing across different short read results
+```{r}
+# comparison_list <- list()
+# 
+# for (i in 1:length(results_list)) {
+#   est_spatial_abundance = results_list[[i]]$gamma / rowSums(results_list[[i]]$gamma)
+#   celltypeimportance <- colSums(est_spatial_abundance)
+#   importance_df <- data.frame(
+#     CellType = names(celltypeimportance),
+#     Proportion = celltypeimportance / sum(celltypeimportance),
+#     stringsAsFactors = FALSE  # ← prevents automatic factor conversion
+#   )
+#   
+#   # Sort by proportion
+#   importance_df <- importance_df[order(importance_df$Proportion, decreasing = TRUE), ]
+#   
+#   # Store top 10
+#   comparison_list[[i]] <- importance_df[1:10, ]
+# }
+# 
+# # Combine into single data frame
+# comparison_df <- do.call(rbind, lapply(1:length(comparison_list), function(i) {
+#   df <- comparison_list[[i]]
+#   df$Run <- i  # add run identifier
+#   df
+# }))
+# comparison_df
+```
+
+
+```{r}
+est_spatial_abundance = gene_sr$gamma/rowSums(gene_sr$gamma)
+celltypeimportance <- colSums(est_spatial_abundance)
+importance_df <- data.frame(
+  CellType = names(celltypeimportance),
+   Proportion = celltypeimportance / sum(celltypeimportance)
+)
+
+# Sort by proportion (descending)
+importance_df <- importance_df[order(importance_df$Proportion, decreasing = TRUE), ]
+
+# Ensure factor levels match sort order
+importance_df$CellType <- factor(importance_df$CellType, levels = importance_df$CellType)
+
+# Plot
+ggplot(importance_df, aes(x = CellType, y = Proportion, fill = CellType)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = scales::percent(Proportion, accuracy = 0.1)), 
+            vjust = -0.3, size = 2.5) +
+  labs(
+    title = "Ground Truth Relative abundance of cell types",
+    y = "Proportion",
+    x = "Cell Type"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1)
+  )
+```
+
+
+Define Color
+```{r}
+colors_provide = rep('black', ncol(gene_sr$gamma))
+names(colors_provide) = colnames(gene_sr$gamma)
+# colors_provide["Astro1"] = 'brown'
+# colors_provide["N10"] = 'steelblue'
+# colors_provide["N11"] = 'green'
+# colors_provide["N12"] = 'blue'
+# colors_provide["OEC1"] = 'red'
+# colors_provide["N14"] = 'darkorange'
+# colors_provide["OEC5"] = 'magenta'
+# colors_provide["N5"] = 'cyan'
+# colors_provide["N13"] = 'yellow'
+# colors_provide["N15"] = 'indianred1'
+# colors_provide["RBCs"] = 'deepskyblue'
+
+
+
+colors_provide['Astro1'] = 'coral3'
+colors_provide['Astro2'] = 'coral'
+colors_provide['EC1'] = 'bisque'
+colors_provide['EC2'] = 'bisque4'
+colors_provide['Mes1'] = 'chartreuse4'
+colors_provide['Mes2'] = 'chartreuse'
+colors_provide['MicroG1'] = 'purple4'
+colors_provide['MicroG2'] = 'purple2'
+colors_provide['MicroG3'] = 'purple'
+colors_provide['Mono'] = 'cadetblue1'
+colors_provide['Mural1'] = 'gold4'
+colors_provide['Mural2'] = 'gold1'
+colors_provide['MyOligo'] = 'brown'
+colors_provide['Mφ'] = 'lemonchiffon'
+colors_provide['N1'] = 'grey1'
+colors_provide['N2'] = 'grey10'
+colors_provide['N3'] = 'grey20'
+colors_provide['N4'] ='grey30'
+colors_provide['N5'] = 'grey40'
+colors_provide['N8'] = 'grey50'
+colors_provide['N10'] = 'grey60'
+colors_provide['N11'] = 'grey70'
+colors_provide['N12'] = 'grey80'
+colors_provide['N13'] = 'grey90'
+colors_provide['N14'] = 'grey100'
+colors_provide['N15'] = 'lavender'
+colors_provide['N16'] = 'linen'
+colors_provide['OEC1'] = 'hotpink'
+colors_provide['OEC2'] = 'hotpink3'
+colors_provide['OEC3'] = 'indianred1'
+colors_provide['OEC4'] = 'indianred4'
+colors_provide['OEC5'] = 'red'
+colors_provide['OPC'] = 'blue'
+colors_provide['RBCs'] = 'cyan'
+
+ 
+
+```
+
+
+```{r, fig.width=10, fig.height=20, out. Width="100%"}
+pos = matrix(0, nrow = nrow(metadata), ncol=2)
+colnames(pos) = c('x', 'y')
+pos[,'y'] = 25000-metadata$imagerow
+pos[,'x'] = metadata$imagecol
+rownames(pos) = rownames(gene_sr$gamma)
+
+vizAllTopics(gene_sr$gamma/rowSums(gene_sr$gamma),pos,topicCols=colors_provide,
+             r = 110)
+```
+
+
+
+```{r}
+
+gene_exp_matrix_check = matrix(0, nrow = 12, ncol = ncol(gene_sr$tau))
+our_est = gene_sr$tau[c('Astro1','N10','N11','N12','OEC1','N14'),]
+comp_w_ref = gene_sr$eta[c('Astro1','N10','N11','N12','OEC1','N14'),]
+rownames(gene_exp_matrix_check) = c("XAstro1", "Astro1",
+                                    "XN10", "N10",
+                                    "XN11", "N11",
+                                    "XN12", "N12",
+                                    "XOEC1", "OEC1",
+                                    "XN14", "N14")
+gene_exp_matrix_check[c(1,3,5,7,9,11),] = our_est/rowSums(our_est)
+gene_exp_matrix_check[c(2,4,6,8,10,12),] = comp_w_ref/rowSums(comp_w_ref)
+visualize_reference(gene_exp_matrix_check,want_log = F)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Gene longread analysis
+
+```{r}
+gene_lr = readRDS("/data/gpfs/projects/punim0614/ashtonl/FlexiDeconv/Isoform_Work/Outputs/report_results/pw_1.0/gene_LR_pw_1.0_t1.rds")
+# gene_lr_res2 = readRDS("../../Data/Isoform/LebrigandIsoform/results/gene_LR_t2.rds")
+# gene_lr_res3 = readRDS("../../Data/Isoform/LebrigandIsoform/results/gene_LR_t3.rds")
+# gene_lr_res4 = readRDS("../../Data/Isoform/LebrigandIsoform/results/gene_LR_t4.rds")
+# gene_lr_res5 = readRDS("../../Data/Isoform/LebrigandIsoform/results/gene_LR_t5.rds")
+```
+
+Cell Type importance
+
+```{r}
+est_spatial_abundance = gene_lr$gamma/rowSums(gene_lr$gamma)
+celltypeimportance <- colSums(est_spatial_abundance)
+importance_df <- data.frame(
+  CellType = names(celltypeimportance),
+   Proportion = celltypeimportance / sum(celltypeimportance)
+)
+
+# Sort by proportion (descending)
+importance_df <- importance_df[order(importance_df$Proportion, decreasing = TRUE), ]
+
+# Ensure factor levels match sort order
+importance_df$CellType <- factor(importance_df$CellType, levels = importance_df$CellType)
+
+# Plot
+ggplot(importance_df, aes(x = CellType, y = Proportion, fill = CellType)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = scales::percent(Proportion, accuracy = 0.1)), 
+            vjust = -0.3, size = 2.5) +
+  labs(
+    title = "Ground Truth Relative abundance of cell types",
+    y = "Proportion",
+    x = "Cell Type"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1)
+  )
+```
+Plotting each cell type individually: (Gene SR)
+```{r}
+est_spatial_abundance_sr = gene_sr$gamma / rowSums(gene_sr$gamma)
+colors_provide_sr = rep("black", ncol(est_spatial_abundance_sr))
+names(colors_provide_sr) = colnames(est_spatial_abundance_sr)
+pos_sr = data.frame(x = meta[rownames(est_spatial_abundance_sr),]$imagecol, 
+                 y = 50000 - meta[rownames(est_spatial_abundance_sr),]$imagerow)
+rownames(pos_sr) = rownames(est_spatial_abundance_sr)
+
+
+est_spatial_abundance_lr = gene_lr$gamma/rowSums(gene_lr$gamma)
+colors_provide_lr = rep("black", ncol(est_spatial_abundance_lr))
+names(colors_provide_lr) = colnames(est_spatial_abundance_lr)
+pos_lr = data.frame(x = meta[rownames(est_spatial_abundance_lr),]$imagecol, 
+                 y = 50000 - meta[rownames(est_spatial_abundance_lr),]$imagerow)
+rownames(pos_lr) = rownames(est_spatial_abundance_lr)
+for (i in 1:ncol(est_spatial_abundance_sr)) {
+  new_col = colors_provide_sr
+  new_col[i] = 'red'
+  new_col_lr = colors_provide_lr
+  new_col_lr[i] = "blue"
+  p1 = vizTopic(as.matrix(est_spatial_abundance_sr), pos=pos_sr, size=2, topic = i, plotTitle = paste0(names(colors_provide_sr)[i], "(SR)"))
+  p2 = vizTopic(as.matrix(est_spatial_abundance_lr), pos=pos_lr, size=2, topic = i, plotTitle = paste0(names(colors_provide_lr)[i], "(LR)"))
+  plot(p1)
+  plot(p2)
+}
+```
+
+
+
+
+
+Define Color
+```{r}
+colors_provide = rep('black', ncol(gene_lr$gamma))
+names(colors_provide) = colnames(gene_lr$gamma)
+# colors_provide["Astro1"] = 'brown'
+# colors_provide["N10"] = 'red'
+# colors_provide["N11"] = 'green'
+# colors_provide["N12"] = 'darkorange'
+# colors_provide["OEC1"] = 'steelblue'
+# colors_provide["N14"] = 'blue'
+# colors_provide["OEC5"] = 'magenta'
+# colors_provide["N5"] = 'cyan'
+# colors_provide["N13"] = 'yellow'
+# colors_provide["N15"] = 'indianred1'
+# colors_provide["RBCs"] = 'deepskyblue'
+# colors_provide['Mono'] = 'cadetblue1'
+# colors_provide['MicroG1'] = 'purple4'
+# colors_provide['N4'] ='coral3'
+# colors_provide['OEC1'] = 'gold'
+# colors_provide['OEC2'] = 'purple'
+# colors_provide['MyOligo'] = 'hotpink'
+
+
+colors_provide['Astro1'] = 'coral3'
+colors_provide['Astro2'] = 'coral'
+colors_provide['EC1'] = 'bisque'
+colors_provide['EC2'] = 'bisque4'
+colors_provide['Mes1'] = 'chartreuse4'
+colors_provide['Mes2'] = 'chartreuse'
+colors_provide['MicroG1'] = 'purple4'
+colors_provide['MicroG2'] = 'purple2'
+colors_provide['MicroG3'] = 'purple'
+colors_provide['Mono'] = 'cadetblue1'
+colors_provide['Mural1'] = 'gold4'
+colors_provide['Mural2'] = 'gold1'
+colors_provide['MyOligo'] = 'brown'
+colors_provide['Mφ'] = 'lemonchiffon'
+colors_provide['N1'] = 'grey1'
+colors_provide['N2'] = 'grey10'
+colors_provide['N3'] = 'grey20'
+colors_provide['N4'] ='grey30'
+colors_provide['N5'] = 'grey40'
+colors_provide['N8'] = 'grey50'
+colors_provide['N10'] = 'grey60'
+colors_provide['N11'] = 'grey70'
+colors_provide['N12'] = 'grey80'
+colors_provide['N13'] = 'grey90'
+colors_provide['N14'] = 'grey100'
+colors_provide['N15'] = 'lavender'
+colors_provide['N16'] = 'linen'
+colors_provide['OEC1'] = 'hotpink'
+colors_provide['OEC2'] = 'hotpink3'
+colors_provide['OEC3'] = 'indianred1'
+colors_provide['OEC4'] = 'indianred4'
+colors_provide['OEC5'] = 'red'
+colors_provide['OPC'] = 'blue'
+colors_provide['RBCs'] = 'cyan'
+```
+
+
+```{r}
+vizAllTopics(gene_lr$gamma/rowSums(gene_lr$gamma),pos,topicCols=colors_provide,
+             r = 110, plotTitle = "Result 1")
+
+# vizAllTopics(gene_lr_res2$gamma/rowSums(gene_lr_res2$gamma),pos,topicCols=colors_provide,
+#              r = 110, plotTitle = "Result 2")
+# 
+# vizAllTopics(gene_lr_res3$gamma/rowSums(gene_lr_res3$gamma),pos,topicCols=colors_provide,
+#              r = 110, plotTitle = "Result 3")
+# 
+# vizAllTopics(gene_lr_res4$gamma/rowSums(gene_lr_res4$gamma),pos,topicCols=colors_provide,
+#              r = 110, plotTitle = "Result 4")
+# 
+# vizAllTopics(gene_lr_res5$gamma/rowSums(gene_lr_res5$gamma),pos,topicCols=colors_provide,
+#              r = 110, plotTitle = "Result 5")
+```
+
+
+
+
+
+
+
+

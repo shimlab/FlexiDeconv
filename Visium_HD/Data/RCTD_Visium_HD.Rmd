@@ -1,0 +1,304 @@
+---
+title: "RCTD_Visium"
+output: html_document
+date: "2026-04-10"
+---
+
+```{r}
+library(Seurat)
+library(ggplot2)
+library(patchwork)
+library(hdf5r)
+library(nanoparquet)
+library(jsonlite)
+library(spacexr)
+library(data.table)
+library(Matrix)
+```
+
+
+
+```{r}
+counts = Read10X(data.dir = "/data/gpfs/projects/punim0614/ashtonl/FlexiDeconv/Visium_HD/Data/Visium_Data/spaceranger/binned_outputs/square_008um/filtered_feature_bc_matrix")
+pos = read_parquet("/data/gpfs/projects/punim0614/ashtonl/FlexiDeconv/Visium_HD/Data/Visium_Data/spaceranger/binned_outputs/square_008um/spatial/tissue_positions.parquet")
+scale = fromJSON("/data/gpfs/projects/punim0614/ashtonl/FlexiDeconv/Visium_HD/Data/Visium_Data/spaceranger/binned_outputs/square_008um/spatial/scalefactors_json.json")
+```
+
+
+```{r}
+pos = pos[pos$in_tissue == 1, ]
+
+coords <- data.frame(x = pos$pxl_col_in_fullres, y = pos$pxl_row_in_fullres,
+                     row.names = pos$barcode)
+```
+
+References
+```{r}
+REF_DIR <- "/data/gpfs/projects/punim0614/ashtonl/FlexiDeconv/Visium_HD/Data/Joglekar_Reference"
+DL_DIR  <- file.path(REF_DIR, "downloads")
+BASE    <- "/data/gpfs/projects/punim0614/ashtonl/FlexiDeconv/Visium_HD/Data"
+SR_DIR  <- file.path(BASE, "Visium_Data/spaceranger")
+
+# sample_map <- data.frame(
+#   counts_dir  = c("P56_M1_HIPP", "P56_M1_STRI", "P56_M1_CB",
+#                    "P56_M2_HIP",  "P56_M2_STR",  "P56_M2_CB",
+#                    "P56_M5_TH",   "P56_M6_TH",
+#                    "P56_M8_VIS",  "P56_M9_VIS"),
+#   allinfo_dir = c("P56_SC_M1_HIPP_AllInfo",  "P56_SC_M1_STRI_AllInfo",  "P56_SC_M1_CEREB_AllInfo",
+#                    "P56_SC_M2_HIPP_AllInfo",  "P56_SC_M2_STRI_AllInfo",  "P56_SC_M2_CEREB_AllInfo",
+#                    "P56_SC_M5_TH_AllInfo",    "P56_SC_M6_TH_AllInfo",
+#                    "P56_SC_M8_VIS_AllInfo",   "P56_SC_M9_VIS_AllInfo"),
+#   allinfo_gz  = c("P56_SC_M1_HIPP_AllInfo.tsv.gz",  "P56_SC_M1_STRI_AllInfo.tsv.gz",  "P56_SC_M1_CEREB_AllInfo.tsv.gz",
+#                    "P56_SC_M2_HIPP_AllInfo.tsv.gz",  "P56_SC_M2_STRI_AllInfo.tsv.gz",  "P56_SC_M2_CEREB_AllInfo.tsv.gz",
+#                    "P56_SC_M5_TH_AllInfo.tsv.gz",    "P56_SC_M6_TH_AllInfo.tsv.gz",
+#                    "P56_SC_M8_VIS_AllInfo.tsv.gz",   "P56_SC_M9_VIS_AllInfo.tsv.gz"),
+#   region = c("Hippocampus", "Striatum", "Cerebellum",
+#              "Hippocampus", "Striatum", "Cerebellum",
+#              "Thalamus",    "Thalamus",
+#              "VisualCortex", "VisualCortex"),
+#   stringsAsFactors = FALSE
+# )
+
+## 8 mappings
+sample_map <- data.frame(
+  counts_dir  = c("P56_M1_HIPP", "P56_M2_HIP",
+                   "P56_M1_STRI", "P56_M2_STR",
+                   "P56_M5_TH",   "P56_M6_TH",
+                   "P56_M8_VIS",  "P56_M9_VIS"),
+  allinfo_dir = c("P56_SC_M1_HIPP_AllInfo", "P56_SC_M2_HIPP_AllInfo",
+                   "P56_SC_M1_STRI_AllInfo", "P56_SC_M2_STRI_AllInfo",
+                   "P56_SC_M5_TH_AllInfo",   "P56_SC_M6_TH_AllInfo",
+                   "P56_SC_M8_VIS_AllInfo",  "P56_SC_M9_VIS_AllInfo"),
+  allinfo_gz  = c("P56_SC_M1_HIPP_AllInfo.tsv.gz", "P56_SC_M2_HIPP_AllInfo.tsv.gz",
+                   "P56_SC_M1_STRI_AllInfo.tsv.gz", "P56_SC_M2_STRI_AllInfo.tsv.gz",
+                   "P56_SC_M5_TH_AllInfo.tsv.gz",   "P56_SC_M6_TH_AllInfo.tsv.gz",
+                   "P56_SC_M8_VIS_AllInfo.tsv.gz",  "P56_SC_M9_VIS_AllInfo.tsv.gz"),
+  region = c("Hippocampus", "Hippocampus",
+             "Striatum",    "Striatum",
+             "Thalamus",    "Thalamus",
+             "VisualCortex", "VisualCortex"),
+  stringsAsFactors = FALSE
+)
+```
+
+```{r}
+# i = 3
+# s <- sample_map[i, ]
+#   gz_path <- file.path(DL_DIR, s$allinfo_dir, s$allinfo_gz)
+# 
+#   cat("  Processing:", s$region, "(", basename(gz_path), ") ...\n")
+# 
+#   ai <- fread(
+#     cmd = paste("zcat", gz_path),
+#     header = FALSE, sep = "\t",
+#     select = c(3, 4),
+#     col.names = c("full_label", "barcode")
+#   )
+# 
+#   ## Extract 5th field of hierarchy: coarse cell type
+#   ## Format: P56::M1::Region::Class::Type::Subtype
+#   ai[, celltype := sapply(strsplit(full_label, "::"), function(x) {
+#     if (length(x) >= 5) x[5] else x[length(x)]
+#   })]
+# 
+#   ai[, sample := s$counts_dir]
+#   bc_ct_list[[i]] <- ai[, .(barcode, celltype, sample)]
+# 
+#   unique(bc_ct_list[[3]]$celltype)
+```
+
+
+## A: Preparing Reference
+Building scRNA-seq Reference: Barcodes -> Cell-type mapping from AllInfo files
+```{r}
+bc_ct_list <- list()
+ 
+for (i in seq_len(nrow(sample_map))) {
+  s <- sample_map[i, ]
+  gz_path <- file.path(DL_DIR, s$allinfo_dir, s$allinfo_gz)
+ 
+  cat("  Processing:", s$region, "(", basename(gz_path), ") ...\n")
+ 
+  ai <- fread(
+    cmd = paste("zcat", gz_path),
+    header = FALSE, sep = "\t",
+    select = c(3, 4),
+    col.names = c("full_label", "barcode")
+  )
+ 
+  ## Extract 5th field of hierarchy: coarse cell type
+  ## Format: P56::M1::Region::Class::Type::Subtype
+  ai[, celltype := sapply(strsplit(full_label, "::"), function(x) {
+  if (length(x) < 5) return(x[length(x)])
+  type    <- x[5]
+  subtype <- if (length(x) >= 6) x[6] else ""
+  if (subtype %in% c("D1MSN", "D2MSN"))  return("MSN")
+  if (subtype == "Cholinergic")           return("Cholinergic")
+  return(type)
+  })]
+ 
+  ai[, sample := s$counts_dir]
+  bc_ct_list[[i]] <- ai[, .(barcode, celltype, sample)]
+}
+ 
+bc_ct_all <- rbindlist(bc_ct_list)
+
+## Majority vote per barcode within each sample
+bc_ct_votes <- bc_ct_all[, .N, by = .(barcode, celltype, sample)]
+bc_ct_final <- bc_ct_votes[bc_ct_votes[, .I[which.max(N)], by = .(barcode, sample)]$V1]
+bc_ct_final <- bc_ct_final[, .(barcode, celltype, sample)]
+
+fwrite(bc_ct_final, file.path(REF_DIR, "barcode_celltype_map_no_CB.csv"))
+```
+
+Building scRNA-seq Reference: Cell Ranger Output
+```{r}
+all_counts <- list()
+all_labels <- c()
+ 
+for (i in seq_len(nrow(sample_map))) {
+  s <- sample_map[i, ]
+  mex_path <- file.path(DL_DIR, s$counts_dir)
+ 
+  cat("  Loading:", s$counts_dir, "(", s$region, ") ...\n")
+ 
+  mat <- readMM(file.path(mex_path, "matrix.mtx"))
+  barcodes <- readLines(file.path(mex_path, "barcodes.tsv"))
+  features <- read.delim(file.path(mex_path, "features.tsv"), header = FALSE)
+ 
+  rownames(mat) <- features$V2   # gene symbols
+  colnames(mat) <- barcodes
+ 
+  ## Strip -1 suffix to match AllInfo barcodes
+  clean_bc <- sub("-1$", "", barcodes)
+ 
+  ## Look up cell-type labels for this sample
+  sample_labels <- bc_ct_final[sample == s$counts_dir]
+  idx <- match(clean_bc, sample_labels$barcode)
+  matched <- !is.na(idx)
+ 
+  cat("    Cells:", ncol(mat),
+      "| Matched:", sum(matched),
+      "(", round(100 * mean(matched), 1), "%)\n")
+ 
+  if (sum(matched) < 25) {
+    cat("    WARNING: too few matches, skipping\n")
+    next
+  }
+ 
+  mat_matched <- mat[, matched, drop = FALSE]
+  labels <- sample_labels$celltype[idx[matched]]
+ 
+  colnames(mat_matched) <- paste0(s$counts_dir, "_", colnames(mat_matched))
+  names(labels) <- colnames(mat_matched)
+ 
+  all_counts[[s$counts_dir]] <- mat_matched
+  all_labels <- c(all_labels, labels)
+}
+```
+Merge and build Reference: 
+```{r}
+common_genes <- Reduce(intersect, lapply(all_counts, rownames))
+cat("  Common genes:", length(common_genes), "\n")
+ 
+all_counts_subset <- lapply(all_counts, function(m) m[common_genes, , drop = FALSE])
+merged_counts <- do.call(cbind, all_counts_subset)
+cell_types <- as.factor(all_labels)
+ 
+cat("  Merged cells:", ncol(merged_counts), "\n")
+cat("  Cell-type distribution:\n")
+print(table(cell_types))
+ 
+## Remove doublets
+keep <- !grepl("[Dd]oublet", cell_types)
+merged_counts <- merged_counts[, keep, drop = FALSE]
+cell_types <- droplevels(cell_types[keep])
+ 
+cat("\n  After removing doublets:", ncol(merged_counts), "cells\n")
+ 
+reference <- Reference(
+  counts     = merged_counts,
+  cell_types = cell_types,
+  nUMI       = colSums(merged_counts)
+)
+ 
+ref_path <- file.path(REF_DIR, "spacexr_reference_no_CB.rds")
+saveRDS(reference, ref_path)
+```
+
+## B: Building Spatial Dataset
+```{r}
+v2_8um_dir <- file.path(SR_DIR, "binned_outputs/square_008um")
+
+counts_v2 <- Read10X_h5(file.path(v2_8um_dir, "filtered_feature_bc_matrix.h5"))
+
+if (file.exists(file.path(v2_8um_dir, "filtered_feature_bc_matrix.h5"))) {
+  library(Seurat)
+  counts_v2 <- Read10X_h5(file.path(v2_8um_dir, "filtered_feature_bc_matrix.h5"))
+  cat("  Loaded from .h5\n")
+} else {
+  mex_dir <- file.path(v2_8um_dir, "filtered_feature_bc_matrix")
+  if (!dir.exists(mex_dir)) mex_dir <- v2_8um_dir
+ 
+  mtx_file  <- if (file.exists(file.path(mex_dir, "matrix.mtx.gz")))
+    file.path(mex_dir, "matrix.mtx.gz") else file.path(mex_dir, "matrix.mtx")
+  bc_file   <- if (file.exists(file.path(mex_dir, "barcodes.tsv.gz")))
+    file.path(mex_dir, "barcodes.tsv.gz") else file.path(mex_dir, "barcodes.tsv")
+  feat_file <- if (file.exists(file.path(mex_dir, "features.tsv.gz")))
+    file.path(mex_dir, "features.tsv.gz") else file.path(mex_dir, "features.tsv")
+ 
+  counts_v2 <- readMM(mtx_file)
+  barcodes_v2 <- readLines(bc_file)
+  features_v2 <- read.delim(feat_file, header = FALSE)
+ 
+  rownames(counts_v2) <- features_v2$V2
+  colnames(counts_v2) <- barcodes_v2
+  cat("  Loaded from MEX\n")
+}
+ 
+cat("  Bins:", ncol(counts_v2), "| Genes:", nrow(counts_v2), "\n")
+ 
+cat("Step B2: Loading spatial coordinates\n")
+ 
+parquet_path <- file.path(v2_8um_dir, "spatial", "tissue_positions.parquet")
+csv_path     <- file.path(v2_8um_dir, "spatial", "tissue_positions.csv")
+ 
+if (file.exists(parquet_path)) {
+  library(nanoparquet)
+  pos <- as.data.frame(nanoparquet::read_parquet(parquet_path))
+  cat("  Loaded from parquet (nanoparquet)\n")
+} else if (file.exists(csv_path)) {
+  pos <- read.csv(csv_path)
+  cat("  Loaded from CSV\n")
+} else {
+  stop("Cannot find tissue_positions in: ", file.path(v2_8um_dir, "spatial"))
+}
+ 
+pos <- pos[pos$in_tissue == 1, ]
+shared_bc <- intersect(colnames(counts_v2), pos$barcode)
+counts_v2 <- counts_v2[, shared_bc, drop = FALSE]
+pos <- pos[match(shared_bc, pos$barcode), ]
+ 
+coords <- data.frame(
+  x = pos$pxl_col_in_fullres,
+  y = pos$pxl_row_in_fullres,
+  row.names = pos$barcode
+)
+ 
+cat("  Tissue bins:", nrow(coords), "\n")
+cat("  Median UMI/bin:", median(colSums(counts_v2)), "\n")
+ 
+cat("Step B3: Building SpatialRNA object\n")
+ 
+spatial_query <- SpatialRNA(
+  coords = coords,
+  counts = counts_v2,
+  nUMI   = colSums(counts_v2)
+)
+```
+```{r}
+print(table(reference@cell_types))
+print(levels(reference@cell_types))
+cat("Total cells in reference:", ncol(reference@counts), "\n")
+```
+

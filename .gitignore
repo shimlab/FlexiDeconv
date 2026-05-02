@@ -4,3 +4,11 @@
 inst/doc
 .Rbuildignore
 .Rhistory
+
+# Large data directories — not tracked in git
+Isoform_Work/Data/
+Isoform_Work/Outputs/
+Visium_HD/Data/ABC_Reference/
+Visium_HD/Data/cell_type_annotation/
+Visium_HD/Data/Joglekar_Reference/
+Visium_HD/Data/Visium_Data/

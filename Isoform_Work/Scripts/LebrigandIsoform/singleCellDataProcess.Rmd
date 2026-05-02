@@ -1,0 +1,66 @@
+---
+title: "singleCellDataProcess"
+output: html_document
+date: "2025-07-07"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Single Cell Data
+
+```{r}
+library(Seurat)
+library(dplyr)
+
+# read count data
+# gene (18560) x cell (51426)
+raw_counts<-read.csv(file="../../Data/Isoform/LebrigandIsoform/GSE121891_OB_6_runs_processed_seurat.dge.csv")
+
+# process metadata
+# counts (51426) x information (8 types)
+metadata<-read.table(file="../../Data/Isoform/LebrigandIsoform/GSE121891_OB_metaData_seurat.csv",sep=",", header=TRUE)
+
+# reference
+# cell type (34) x gene (18560)
+metadata
+```
+
+
+analysis
+```{r}
+boxplot(metadata$nUMI, ylab = "Total gene count over cells", 
+        main = "Distribution of total gene count", horizontal = T)
+outliers <- boxplot.stats(metadata$nUMI)$out
+threshold_count = min(outliers)
+# threshold_count = 0
+```
+
+
+```{r}
+reference = matrix(0, ncol = nrow(raw_counts), nrow = length(unique(metadata$ClusterName)))
+rownames(reference) = sort(unique(metadata$ClusterName))
+colnames(reference) = rownames(raw_counts)
+```
+
+
+```{r}
+for (i in 1:dim(metadata)[1]) {
+  nUMI = metadata$nUMI[i]
+  if (nUMI >= threshold_count) {
+    # Calculates gene specific factor metadata nUMI normalised by raw counts matrix for that given gene
+    factor = nUMI/sum(raw_counts[,i])
+    celltype = metadata$ClusterName[i]
+    # Assign reference CT 1 gene values = factor_1 * raw_counts[, gene1] + factor_2 * raw_counts[, gene2] + ...
+    reference[celltype,] = reference[celltype,] + raw_counts[,i] * factor
+    # print(paste(sum(raw_counts[,i]*factor), nUMI))  
+  }
+}
+```
+
+```{r}
+saveRDS(reference, "../../Data/Isoform/LebrigandIsoform/GSE121891_unnormalized_ref_unfiltered.rds")
+```
+
+

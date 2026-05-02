@@ -1,0 +1,224 @@
+---
+title: "isoform_simulation"
+output: html_document
+date: "2025-05-25"
+---
+
+# Import libraries
+
+```{r}
+set.seed(1)
+library(bayess)
+library(STdeconvolve)
+library(Matrix)
+source("../functions(new).R")
+```
+
+# Simulation
+
+
+Generate ground truth parameters
+```{r}
+# Define hyperparameters
+side_length = 16
+num_spots = side_length*side_length
+num_genes = 120
+max_unique_isoform = 5
+avg_num_molecules = 4000 
+num_cell_type = 6
+cell_type_names = c("C1", "C2", "C3", "C4", "C5", "C6")
+gene_names = paste("g", seq(1, num_genes), sep="")
+isoform_dist = readRDS("../../Data/Isoform/LebrigandIsoform/isoform_dist.rds")
+unique_isoforms = sample(strtoi(rownames(isoform_dist[1:max_unique_isoform])), size=num_genes, 
+                         prob=isoform_dist[1:max_unique_isoform],replace=T)
+isoform_dict <- list()
+
+for (g in 1:num_genes) {
+  curr_gene_isoform <- c()
+  for (i in 1:unique_isoforms[g]) {
+    curr_gene_isoform <- c(curr_gene_isoform, paste("i", i, sep = ""))
+  }
+  isoform_dict[[paste("g", g, sep = "")]] <- curr_gene_isoform
+}
+
+
+
+# Ground Truth cell type composition
+cell_type_composition = rdirichlet(n = num_spots, par = rep(1, num_cell_type))
+colnames(cell_type_composition) = cell_type_names
+cell_type_composition = cell_type_composition[order(cell_type_composition[,1]),]
+rownames(cell_type_composition) = seq(1, num_spots)
+
+# Position
+x = rep(seq(1:side_length), side_length)
+y = rep(1:side_length, each = side_length)
+pos=data.frame(x=x,y=y)
+
+# Ground Truth cell type gene expression 
+celltype_gene = Matrix(0, nrow = num_cell_type, ncol = num_genes)
+rownames(celltype_gene) = cell_type_names
+colnames(celltype_gene) = gene_names
+for (i in 1:num_cell_type) {
+  param = rep(1, num_genes)
+  param[(i*20-19):(i*20)] = 5
+  celltype_gene[i,] = rdirichlet(1, param) 
+}
+
+# Isoform 
+isoform_prob <- matrix(vector("list", num_cell_type * num_genes), nrow = num_cell_type, ncol = num_genes)
+for (i in 1:num_cell_type) {
+  isoform_idx = 1
+  for (j in 1:num_genes) {
+    
+    vec = as.vector(rdirichlet(1, par = rep(2/unique_isoforms[isoform_idx], unique_isoforms[isoform_idx])))
+    names(vec) = paste("C",i,"g",j,"i",1:length(vec), sep="")
+    isoform_idx = isoform_idx + 1
+    isoform_prob[[i,j]] = vec
+  }
+}
+
+
+```
+
+# Analyze Ground Truth
+
+Pie charts for cell type decomposition （ground truth)
+```{r}
+vizAllTopics(cell_type_composition, pos)
+```
+
+
+Heatmap for gene expression
+```{r}
+visualize_reference(celltype_gene, want_log=F, cluster_col=F)
+```
+```{r}
+hist(as.vector(log(celltype_gene)), main = "Histogram of gene expression likelihood", xlab = "Log(gene expression values)")
+hist(as.vector(celltype_gene), main = "Histogram of gene expression likelihood", xlab = "gene expression values" )
+```
+
+
+Generate spatial data
+```{r}
+
+# Defining variables
+total_transcript = sum(unique_isoforms)
+spatial_data = matrix(0, nrow = num_spots, ncol = total_transcript)
+rownames(spatial_data) = seq(1:num_spots)
+transcript_names = c()
+for (i in 1:num_genes) {
+  for (j in 1:unique_isoforms[i]) {
+    transcript_names = c(transcript_names, paste("g",i,"i",j, sep=""))
+  }
+}
+colnames(spatial_data) = transcript_names
+empirical_celltype_composition = matrix(0, nrow = num_spots, ncol = num_cell_type)
+rownames(empirical_celltype_composition) = seq(1,num_spots)
+colnames(empirical_celltype_composition) = cell_type_names
+nUMI = c()
+# transcript level cell type distribution
+spot_transcript_celltype <- array(0, dim = c(num_spots, total_transcript, num_cell_type))
+dimnames(spot_transcript_celltype) <- list( 
+  Pixel = 1:num_spots,  # Label for the first dimension (pixels)
+  Gene = transcript_names,    # Label for the second dimension (transcripts)
+  CellType = cell_type_names      # Label for the third dimension (cell types)
+)
+
+
+
+for (i in 1:num_spots) {
+  total_molecules = rpois(1,avg_num_molecules)
+  cell_type = sample(1:num_cell_type, total_molecules, prob=cell_type_composition[i,],
+                     replace=T)
+  empirical_celltype_composition[i,paste("C",names(table(cell_type)),sep="")] = 
+    table(cell_type)/total_molecules 
+  nUMI = c(nUMI, total_molecules)
+  for (j in 1:total_molecules) {
+    curr_cell_type_name = cell_type_names[cell_type[j]]
+    gene = sample(1:num_genes, 1, prob=celltype_gene[cell_type[j],])
+    curr_gene_name = gene_names[gene]
+    possible_iso = paste("i", 1:unique_isoforms[gene], sep="")
+    isoform = sample(possible_iso, 1, prob=isoform_prob[[cell_type[j], gene]])
+    spatial_data[i, paste("g",gene,isoform,sep="")] = 
+      spatial_data[i, paste("g",gene,isoform,sep="")] + 1
+    spot_transcript_celltype[i,which(transcript_names == paste("g",gene,isoform,sep="")), cell_type[j]] =
+      spot_transcript_celltype[i,which(transcript_names == paste("g",gene,isoform,sep="")), cell_type[j]] + 1
+  }
+}
+
+```
+
+
+Visualize isoform, can only subsample
+```{r}
+subsample_amount = 20
+subsample_idx = sample(1:num_genes, size=subsample_amount)
+
+isoform_as_array = matrix(0, nrow = num_cell_type * subsample_amount + 1, 
+                          ncol = max_unique_isoform)
+isoform_pos_x = rep(seq(1:subsample_amount), num_cell_type)
+isoform_pos_y = rep(1:num_cell_type, each=subsample_amount)*2
+isoform_pos = data.frame(x=isoform_pos_x,y=isoform_pos_y)
+
+k = 1
+for (i in 1:num_cell_type) {
+  for (j in 1:length(subsample_idx)) {
+    vec = numeric(max_unique_isoform)
+    vec[1:length(isoform_prob[[i,subsample_idx[j]]])] = isoform_prob[[i,subsample_idx[j]]]
+    isoform_as_array[k,] = vec; k = k+1
+  }
+}
+
+vizAllTopics(isoform_as_array, isoform_pos, r=0.4, showLegend=F)
+
+```
+
+
+
+Save generated data
+```{r}
+saveRDS(spatial_data, "../../Data/Isoform/Simulation/spatial_data.rds")
+saveRDS(celltype_gene, "../../Data/Isoform/Simulation/reference.rds")
+saveRDS(cell_type_composition, "../../Data/Isoform/Simulation/gt_celltype_compositions.rds")
+saveRDS(isoform_prob, "../../Data/Isoform/Simulation/gt_isoform_prob.rds")
+saveRDS(nUMI, "../../Data/Isoform/Simulation/gt_nUMI.rds")
+saveRDS(empirical_celltype_composition, "../../Data/Isoform/Simulation/empirical_gt_celltype_compositions.rds")
+saveRDS(spot_transcript_celltype, "../../Data/Isoform/Simulation/gt_spot_transcript_celltype.rds")
+saveRDS(pos, "../../Data/Isoform/Simulation/gt_pos.rds")
+saveRDS(isoform_dict, "../../Data/Isoform/Simulation/isoform_dict.rds")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

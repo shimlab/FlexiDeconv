@@ -1,0 +1,103 @@
+---
+title: "singleCellProcessing_amended"
+output: html_document
+date: "2026-02-16"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Single Cell Data
+
+```{r}
+library(Seurat)
+library(dplyr)
+
+# read count data
+# gene (18560) x cell (51426)
+raw_counts <- read.csv(file="../../Data/Isoform/LebrigandIsoform/GSE121891_OB_6_runs_processed_seurat.dge.csv")
+
+# process metadata
+# counts (51426) x information (8 types)
+metadata<-read.table(file="../../Data/Isoform/LebrigandIsoform/GSE121891_OB_metaData_seurat.csv",sep=",", header=TRUE)
+
+# reference
+# cell type (34) x gene (18560)
+metadata
+```
+
+## Boxplot to filter out outliers
+```{r}
+boxplot(metadata$nUMI, ylab = "Total gene count over cells", 
+        main = "Distribution of total gene count", horizontal = T)
+outliers <- boxplot.stats(metadata$nUMI)$out
+threshold_count = min(outliers)
+
+sum(metadata$nUMI[metadata$nUMI > threshold_count])
+sum(metadata$nUMI[metadata$nUMI < threshold_count])
+```
+
+```{r}
+reference_all = matrix(0, ncol = nrow(raw_counts), nrow = length(unique(metadata$ClusterName)))
+rownames(reference_all) = sort(unique(metadata$ClusterName))
+colnames(reference_all) = rownames(raw_counts)
+
+reference_outlier = matrix(0, ncol = nrow(raw_counts), nrow = length(unique(metadata$ClusterName)))
+rownames(reference_outlier) = sort(unique(metadata$ClusterName))
+colnames(reference_outlier) = rownames(raw_counts)
+
+reference_box = matrix(0, ncol = nrow(raw_counts), nrow = length(unique(metadata$ClusterName)))
+rownames(reference_box) = sort(unique(metadata$ClusterName))
+colnames(reference_box) = rownames(raw_counts)
+```
+
+## Testing 3 conditions on no filtering, keeping outliers, keeping boxplot
+```{r}
+#All 
+for (i in 1:dim(metadata)[1]) {
+  nUMI = metadata$nUMI[i]
+  # Calculates gene specific factor metadata nUMI normalised by raw counts matrix for that given gene
+  factor = nUMI/sum(raw_counts[,i])
+  celltype = metadata$ClusterName[i]
+  # Assign reference CT 1 gene values = factor_1 * raw_counts[, gene1] + factor_2 * raw_counts[, gene2] + ...
+  reference_all[celltype,] = reference_all[celltype,] + raw_counts[,i] * factor
+  # print(paste(sum(raw_counts[,i]*factor), nUMI))  
+}
+
+
+# Keep outlier
+for (i in 1:dim(metadata)[1]) {
+  nUMI = metadata$nUMI[i]
+  if (nUMI >= threshold_count) {
+    # Calculates gene specific factor metadata nUMI normalised by raw counts matrix for that given gene
+    factor = nUMI/sum(raw_counts[,i])
+    celltype = metadata$ClusterName[i]
+    # Assign reference CT 1 gene values = factor_1 * raw_counts[, gene1] + factor_2 * raw_counts[, gene2] + ...
+    reference_outlier[celltype,] = reference_outlier[celltype,] + raw_counts[,i] * factor
+    # print(paste(sum(raw_counts[,i]*factor), nUMI))  
+  }
+}
+
+# Keep box plot
+for (i in 1:dim(metadata)[1]) {
+  nUMI = metadata$nUMI[i]
+  if (nUMI < threshold_count) {
+    # Calculates gene specific factor metadata nUMI normalised by raw counts matrix for that given gene
+    factor = nUMI/sum(raw_counts[,i])
+    celltype = metadata$ClusterName[i]
+    # Assign reference CT 1 gene values = factor_1 * raw_counts[, gene1] + factor_2 * raw_counts[, gene2] + ...
+    reference_box[celltype,] = reference_box[celltype,] + raw_counts[,i] * factor
+    # print(paste(sum(raw_counts[,i]*factor), nUMI))  
+  }
+}
+```
+
+
+
+## Saving reference
+```{r}
+saveRDS(reference_all, "../../Data/Isoform/LebrigandIsoform/references/GSE121891_unnormalized_ref_all.rds")
+saveRDS(reference_outlier, "../../Data/Isoform/LebrigandIsoform/references/GSE121891_unnormalized_ref_out.rds")
+saveRDS(reference_box, "../../Data/Isoform/LebrigandIsoform/references/GSE121891_unnormalized_ref_box.rds")
+```

@@ -1,6 +1,6 @@
 library(STdeconvolve)
 library(Matrix)
-source("/data/gpfs/projects/punim0614/yichenjiang/LDAproject/Scripts/functions(new).R")
+source("/data/gpfs/projects/punim0614/ashtonl/FlexiDeconv/Isoform_Work/Scripts/functions(new).R")
 
 args <- commandArgs(trailingOnly = TRUE)
 
@@ -27,7 +27,7 @@ if (is_number(prior_constant)) {
   input_pw = prior_constant
 } else {
   # a directory
-  prior_constant_data = readRDS(prior_constant)
+  prior_constant_data = readRDS(prior_constant) * as.numeric(args[5])
   input_pw = prior_constant_data
   PRIOR_CONST = matrix(prior_constant_data, nrow = dim(ref_data)[1],
                        ncol = dim(ref_data)[2], byrow = FALSE)
@@ -88,7 +88,7 @@ print(paste("Dimension of Reference Data: ", dim(ref_data)))
 # vizAllTopics(cell_type_gt, positions, r=20)
 
 ###############################################################################
-source("/data/projects/punim0614/yichenjiang/LDAproject/Scripts/VI_Rscripts.R")
+source("/data/gpfs/projects/punim0614/ashtonl/FlexiDeconv/Isoform_Work/Scripts/VI_Rscripts.R")
 
 
 
