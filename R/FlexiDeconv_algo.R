@@ -39,7 +39,6 @@ ELBO <- function(ref.p, gamma.p, tau.p, alpha.p, phi.p, ct.count,
   gc()
   #print(paste("ELBO took:", (proc.time() - start_time)[3], "seconds"))
   term1 + term2 + term3 + term4 - term5 - term6 - term7
-  print("Hello world")
 }
 
 #' Helper function to calculate first term of the ELBO: E[p(beta)])
@@ -331,7 +330,7 @@ phi.update <- function(pixel.count, ct.count, gene.count, gamma.p, tau.p) {
 gamma.update <- function(pixel.count, gene.count, ct.count, alpha.p, phi.p,
                          count.data) {
   new.gamma <- matrix(rep(alpha.p, each = pixel.count), nrow = pixel.count,
-                      byrow=TRUE)
+                      byrow=FALSE)
   for (i in 1:ct.count) {
     new.gamma[,i] <- new.gamma[,i] + rowSums(count.data * phi.p[,,i])
   }
