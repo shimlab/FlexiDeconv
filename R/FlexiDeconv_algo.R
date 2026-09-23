@@ -1,5 +1,3 @@
-
-
 #' Helper function to calculate the ELBO
 #'
 #' @description For given reference, gamma, tau, alpha, phi parameter values, as well
@@ -26,6 +24,7 @@
 #'
 #' @keywords internal
 
+# Unchanged
 ELBO <- function(ref.p, gamma.p, tau.p, alpha.p, phi.p, ct.count,
                  pixel.count, gene.count, count.data) {
   start_time <- proc.time()
@@ -55,6 +54,7 @@ ELBO <- function(ref.p, gamma.p, tau.p, alpha.p, phi.p, ct.count,
 #'
 #' @noRd
 
+# Unchanged
 t1 <- function(ref.p, ct.count, tau.p) {
   # E[p(beta)]
   val <- 0
@@ -84,15 +84,16 @@ t1 <- function(ref.p, ct.count, tau.p) {
 #'
 #' @keywords internal
 
+# Vectorised (Standalone)
+# Was: looped over pixels accumulating (alpha.p - 1) %*% gamma.vec[i,] for
+# each pixel row.
+# Now: sums (alpha.p-1) . gamma.vec[i,] over pixels as (alpha.p-1) .
+# colSums(gamma.vec). Replaces the loop with one colSums() call.
 t2 <- function(alpha.p, gamma.p, pixel.count) {
   # E[log p(theta|alpha)]
   val <- pixel.count * (lgamma(sum(alpha.p)) - sum(lgamma(alpha.p)))
-
-  for (i in 1:pixel.count) {
-    gamma.row <- gamma.p[i,]
-    gamma.vec <- digamma(gamma.row) - digamma(sum(gamma.row))
-    val <- val + (alpha.p - 1) %*% gamma.vec
-  }
+  gamma.digamma <- digamma(gamma.p) - digamma(rowSums(gamma.p))  # pixel x ct
+  val <- val + sum((alpha.p - 1) * colSums(gamma.digamma))
   val
 }
 
@@ -115,7 +116,7 @@ t2 <- function(alpha.p, gamma.p, pixel.count) {
 #'
 #' @keywords internal
 
-
+# Unchanged
 t3 <- function(phi.p, gamma.p, pixel.count, ct.count, count.data, gene.count) {
   # E[log p(z|theta)]
   a = digamma(gamma.p) - matrix(rep(digamma(rowSums(gamma.p)), each = ct.count),
@@ -126,8 +127,6 @@ t3 <- function(phi.p, gamma.p, pixel.count, ct.count, count.data, gene.count) {
   }
   sum(sapply(1:dim(new_phi)[2], function(n) sum(new_phi[, n, ] * a)))
 }
-
-
 
 #' Helper function to calculate fourth term of the ELBO: E[log p(w|z,beta)]
 #'
@@ -149,7 +148,7 @@ t3 <- function(phi.p, gamma.p, pixel.count, ct.count, count.data, gene.count) {
 #'
 #' @keywords internal
 
-
+# Unchanged
 t4 <- function(gene.count, pixel.count, ct.count, phi.p, tau.p, count.data) {
   # E[log p(w|z,beta)]
   a = t(digamma(tau.p) - matrix(rep(digamma(rowSums(tau.p)), each = gene.count),
@@ -161,9 +160,6 @@ t4 <- function(gene.count, pixel.count, ct.count, phi.p, tau.p, count.data) {
   collapsed_matrix <- apply(new_phi, c(2, 3), sum)
   sum(collapsed_matrix * a)
 }
-
-
-
 
 #' Helper function to calculate fifth term of the ELBO: E[log q(theta)]
 #'
@@ -180,15 +176,17 @@ t4 <- function(gene.count, pixel.count, ct.count, phi.p, tau.p, count.data) {
 #'
 #' @keywords internal
 
+# Vectorised (Standalone)
+# Was: looped over pixels accumulating lgamma(sum(gamma.p[i,])) -
+# sum(lgamma(gamma.p[i,])) plus a dot-product term for each pixel row.
+# Now: computes the lgamma/digamma terms across the whole gamma matrix at
+# once with rowSums(). Replaces the per-row loop with two sum() calls.
 t5 <- function(pixel.count, gamma.p) {
   # E[log q(theta)]
-  val <- 0
-  for (i in 1:pixel.count) {
-    val <- val + lgamma(sum(gamma.p[i,])) - sum(lgamma(gamma.p[i,]))
-    gamma.vec1 <- gamma.p[i,] - 1
-    gamma.vec2 <- digamma(gamma.p[i,]) - digamma(sum(gamma.p[i,]))
-    val <- val + gamma.vec1 %*% gamma.vec2
-  }
+  row.sums <- rowSums(gamma.p)
+  val <- sum(lgamma(row.sums)) - sum(lgamma(gamma.p))
+  gamma.vec2 <- digamma(gamma.p) - digamma(row.sums)   # pixel x ct, recycled
+  val <- val + sum((gamma.p - 1) * gamma.vec2)
   val
 }
 
@@ -211,7 +209,7 @@ t5 <- function(pixel.count, gamma.p) {
 #'
 #' @keywords internal
 
-
+# Unchanged
 t6 <- function(pixel.count, ct.count, gene.count, phi.p, count.data) {
   # E[log q(z)]
   new_phi = phi.p * log(phi.p)
@@ -220,7 +218,6 @@ t6 <- function(pixel.count, ct.count, gene.count, phi.p, count.data) {
   for (i in 1:ct.count) {
     particular_phi = new_phi[,,i]
     total_sum = total_sum + sum(particular_phi*count.data)
-
   }
   total_sum
 }
@@ -240,6 +237,7 @@ t6 <- function(pixel.count, ct.count, gene.count, phi.p, count.data) {
 #'
 #' @keywords internal
 
+# Unchanged
 t7 <- function(ct.count, tau.p) {
   # E[log q(beta)]
   val <- 0
@@ -252,24 +250,18 @@ t7 <- function(ct.count, tau.p) {
   val
 }
 
-
-
 #' Helper function to update parameter phi in the VI algorithm
 #'
 #' @description For given parameters gamma, tau, total pixel count,
 #' total cell type count and total gene count, update the phi parameter
 #'
+#' @param pixel.count total pixel count
+#' @param ct.count total cell type count
+#' @param gene.count total gene count
 #' @param gamma.p Variational Inference parameter gamma matrix,
 #'      with dimension pixel x cell type
 #' @param tau.p Variational Inference parameter tau matrix,
 #'      with dimension cell type x gene
-#' @param alpha.p Variational Inference parameter gamma matrix,
-#'      with dimension pixel x cell type
-#' @param phi.p Variational Inference parameter 3-dimensional phi array,
-#'      with dimension pixel x gene x cell type
-#' @param ct.count total cell type count
-#' @param pixel.count total pixel count
-#' @param gene.count total gene count
 #'
 #' @return Updated phi parameter, dimension = pixel x gene x cell type
 #'
@@ -277,40 +269,37 @@ t7 <- function(ct.count, tau.p) {
 #'
 #' @keywords internal
 
-
+# Vectorised (Standalone)
+# Was: looped over pixels. Re-transposed the loop-invariant tau term on
+# every iteration then built a gene.count x ct.count matrix per pixel
+# before exponentiating and row-normalizing it.
+# Now: loops over cell types instead using outer() to build each
+# pixel x gene slice directly. The transposed tau term is computed once
+# outside the loop. Normalization happens once across all pixels at the end.
 phi.update <- function(pixel.count, ct.count, gene.count, gamma.p, tau.p) {
-  # Better version
   new.phi <- array(0, dim = c(pixel.count, gene.count, ct.count))
 
-  gamma.vec <- digamma(rowSums(gamma.p))
-  gamma.mat <- matrix(rep(gamma.vec, each = ct.count), ncol = ct.count,
-                      byrow = TRUE)
-  new.gamma <- digamma(gamma.p) - gamma.mat
+  new.gamma  <- digamma(gamma.p) - digamma(rowSums(gamma.p))  # pixel x ct
+  new.tau    <- digamma(tau.p)   - digamma(rowSums(tau.p))    # ct x gene
+  tau.matrix <- t(new.tau)                                    # gene x ct, computed once
 
-  tau.vec <- digamma(rowSums(tau.p))
-  tau.mat <- matrix(rep(tau.vec, each = gene.count), ncol = gene.count,
-                    byrow = TRUE)
-  new.tau <- digamma(tau.p) - tau.mat
-
-  for (i in 1:pixel.count) {
-    gamma.vec <- new.gamma[i,]
-    gamma.matrix <- matrix(rep(gamma.vec, each = gene.count), nrow=gene.count)
-    tau.matrix <- t(new.tau)
-    new.phi[i,,] <- as.matrix(exp(gamma.matrix + tau.matrix))
-    new.phi[i,,] <- new.phi[i,,]/rowSums(new.phi[i,,])
+  for (k in 1:ct.count) {
+    new.phi[,,k] <- exp(outer(new.gamma[,k], tau.matrix[,k], "+"))
   }
 
+  # normalize across cell types (3rd dim) for every (pixel, gene) at once
+  row.sum <- new.phi[,,1]
+  for (k in 2:ct.count) row.sum <- row.sum + new.phi[,,k]
+  for (k in 1:ct.count) new.phi[,,k] <- new.phi[,,k] / row.sum
 
   new.phi
 }
-
 
 #' Helper function to update parameter gamma in the VI algorithm
 #'
 #' @description For given parameters alpha, phi and total pixel count, total
 #' gene count, total cell type count and the Spatial Transcriptomics data,
 #' update the gamma parameter
-#'
 #'
 #' @param alpha.p Variational Inference parameter gamma matrix,
 #'      with dimension pixel x cell type
@@ -327,6 +316,7 @@ phi.update <- function(pixel.count, ct.count, gene.count, gamma.p, tau.p) {
 #'
 #' @keywords internal
 
+# Unchanged
 gamma.update <- function(pixel.count, gene.count, ct.count, alpha.p, phi.p,
                          count.data) {
   new.gamma <- matrix(rep(alpha.p, each = pixel.count), nrow = pixel.count,
@@ -336,7 +326,6 @@ gamma.update <- function(pixel.count, gene.count, ct.count, alpha.p, phi.p,
   }
   new.gamma
 }
-
 
 #' Helper function to update parameter tau in the VI algorithm
 #'
@@ -358,6 +347,7 @@ gamma.update <- function(pixel.count, gene.count, ct.count, alpha.p, phi.p,
 #'
 #' @keywords internal
 
+# Unchanged
 tau.update <- function(ct.count, gene.count, pixel.count, ref.p, phi.p, count.data) {
   new.tau <- ref.p
   for (i in 1:ct.count) {
@@ -384,6 +374,7 @@ tau.update <- function(ct.count, gene.count, pixel.count, ref.p, phi.p, count.da
 #'
 #' @keywords internal
 
+# Unchanged
 alpha.update <- function(pixel.count, ct.count, alpha.p, gamma.p) {
   threshold <- 0.0001
   curr.alpha <- alpha.step(pixel.count, ct.count, alpha.p, gamma.p)
@@ -397,8 +388,6 @@ alpha.update <- function(pixel.count, ct.count, alpha.p, gamma.p) {
   }
   new.alpha
 }
-
-
 
 #' Helper function to perform an iterative step during update of alpha
 #'
@@ -418,14 +407,15 @@ alpha.update <- function(pixel.count, ct.count, alpha.p, gamma.p) {
 #'
 #' @keywords internal
 
+# Vectorised (Standalone)
+# Was: nested loop over pixels and cell types recomputing
+# digamma(sum(gamma.p[i,])) inside the inner (cell-type) loop for every pixel.
+# Now: replaces the double loop with a single
+# colSums(digamma(gamma.p)) - sum(digamma(rowSums(gamma.p))) expression.
 alpha.step <- function(pixel.count, ct.count, alpha.p, gamma.p) {
   g.vec <- pixel.count * (digamma(sum(alpha.p)) - digamma(alpha.p))
+  g.vec <- g.vec + colSums(digamma(gamma.p)) - sum(digamma(rowSums(gamma.p)))
 
-  for (i in 1:pixel.count) {
-    for (j in 1:ct.count) {
-      g.vec[j] <- g.vec[j] + digamma(gamma.p[i,j]) - digamma(sum(gamma.p[i,]))
-    }
-  }
   z <- trigamma(sum(alpha.p)) * pixel.count
   h.vec <- pixel.count * trigamma(alpha.p) * (-1)
   c.const <- sum(g.vec/h.vec)/(1/z + sum(1/h.vec))
@@ -438,10 +428,6 @@ alpha.step <- function(pixel.count, ct.count, alpha.p, gamma.p) {
   }
   new.alpha
 }
-
-
-
-
 
 
 
@@ -561,23 +547,4 @@ runFlexiDeconv <- function(spatial, reference, prior_const,
                 phi = phi, tau = tau, total_iter = iter)
   return(output)
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
