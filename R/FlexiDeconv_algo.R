@@ -244,7 +244,7 @@ t7 <- function(ct.count, tau.p) {
   # E[log q(beta)]
   val <- 0
   for (i in 1:ct.count) {
-    val <- lgamma(sum(tau.p[i,])) - sum(lgamma(tau.p[i,]))
+    val <- val + lgamma(sum(tau.p[i,])) - sum(lgamma(tau.p[i,]))
     tau.vec1 <- tau.p[i,] - 1
     tau.vec2 <- digamma(tau.p[i,]) - digamma(sum(tau.p[i,]))
     val <- val + tau.vec1 %*% tau.vec2
